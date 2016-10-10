@@ -42,7 +42,7 @@ function setUserGameInfoFromPageThingFunction() {
 		addText("Connected!");
 		addText("Logged in as: ");
 		addText(client.username + " - (" + client.id + ")");
-		client.setPresence(presence); addText("Game set to " + presence.game.name);
+		client.setPresence(presence); addText("Game set to \"" + presence.game.name + "\"");
 		addText("All done! You can close the page now.");
 	});
 }
