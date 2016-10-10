@@ -23,7 +23,7 @@ function setUserGameInfoFromPageThingFunction() {
 	var x = document.getElementById("frm1");
 	var tokenFromPage = x.elements[0].value;
 	var gameFromPage = x.elements[1].value;
-	var bot = new Discord.Client({
+	var client = new Discord.Client({
 		token: tokenFromPage,
 		autorun: true
 	});
@@ -37,12 +37,12 @@ function setUserGameInfoFromPageThingFunction() {
 		}
 	};
 
-	bot.on("ready", function(event) {
+	client.on("ready", function(event) {
 		addText("Connected!");
 		addText("Logged in as: ");
-		addText(bot.username + " - (" + bot.id + ")");
-		bot.setPresence(botPresence); addText("Game set to " + presence.game.name);
-		addText("----------");
+		addText(client.username + " - (" + client.id + ")");
+		client.setPresence(presence); addText("Game set to " + presence.game.name);
+		addText("All done! You can close the page now.");
 	});
 }
 
