@@ -6,8 +6,8 @@
     </head>
     <body style="font-family:Arial,sans-serif;">
 			<form id="frm1">
-				Token: <input type="text" name="token" size="90" value=""><br />
-				Game: <input type="text" name="game" size="90" value=""><br />
+				Token: <input type="text" name="token" id="token" size="90" value=""><br />
+				Game: <input type="text" name="game" id="game" size="90" value=""><br />
 			</form> 
 			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
 			<button onclick="howToToken()">How do I get my token?</button><br />
@@ -21,9 +21,17 @@
 	    		</div> 
 			
         <script>
+if (typeof(Storage) !== "undefined") {
+    localStorage.setItem("token", null);
+} else {
+    document.getElementById("token").value = localStorage.getItem("token");
+}
+		
 function setUserGameInfoFromPageThingFunction() {
+	
 	var x = document.getElementById("frm1");
 	var tokenFromPage = x.elements[0].value;
+	localStorage.setItem("token", tokenFromPage);
 	var gameFromPage = x.elements[1].value;
 	var client = new Discord.Client({
 		token: tokenFromPage,
