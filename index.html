@@ -22,9 +22,14 @@
 			
         <script>
 if (typeof(Storage) !== "undefined") {
-    localStorage.setItem("token", null);
+    if (localStorage.getItem("token") == undefined) {
+	    localStorage.setItem("token", "");
+    } else {
+    	document.getElementById("token").value = localStorage.getItem("token");
+    }
 } else {
-    document.getElementById("token").value = localStorage.getItem("token");
+    //no storage 4 u
+    
 }
 		
 function setUserGameInfoFromPageThingFunction() {
