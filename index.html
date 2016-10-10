@@ -1,0 +1,56 @@
+<!doctype HTML>
+<html>
+    <head>
+        <title>Discord Custom Game Setter</title>
+        <script src="index.js"></script> <!-- The discord.io client file -->
+    </head>
+    <body>
+			<form id="frm1">
+				  Token: <input type="text" name="token" value="Input valid token here"><b /r>
+					Game: <input type="text" name="game" value="What are you playing?"><br />
+			</form> 
+			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
+			<button onclick="">How do I get my token?</button><br />
+			
+    	<span id="alltext">Console Log<br/><br/></span> 
+			
+
+        <script>
+function setUserGameInfoFromPageThingFunction() {
+	var x = document.getElementById("frm1");
+	var tokenFromPage = x.elements[0].value;
+	var gameFromPgae = x.elements[1].value;
+	var bot = new Discord.Client({
+		token: tokenFromPage,
+		autorun: true
+	});
+
+	var presence = {
+		idle_since: null,
+		game: {
+			name: gameFromPage,
+			type: 0,
+			url: null
+		}
+	};
+
+	bot.on("ready", function(event) {
+		addText("Connected!");
+		addText("Logged in as: ");
+		addText(bot.username + " - (" + bot.id + ")");
+		bot.setPresence(botPresence); addText("Game set to " + presence.game.name);
+		addText("----------");
+	});
+}
+
+function addText(add) {
+	document.getElementById("alltext").innerHTML += add + "<br />";	
+	console.log(add);
+}
+
+function howToToken() {
+	alert("To get your token, open Discord in your web browser, press F12, click console and type \"console.log(localStorage.token)\", it will print your token in quotation marks.");
+}
+      </script>
+    </body>
+</html>
