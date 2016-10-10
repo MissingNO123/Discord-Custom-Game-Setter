@@ -4,7 +4,7 @@
         <title>Discord Custom Game Setter</title>
         <script src="discordio.js"></script> <!-- The discord.io client file -->
     </head>
-    <body>
+    <body style="font-family:Arial,sans-serif;">
 			<form id="frm1">
 				Token: <input type="text" name="token" size="90" value=""><br />
 				Game: <input type="text" name="game" size="90" value=""><br />
@@ -12,12 +12,11 @@
 			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
 			<button onclick="howToToken()">How do I get my token?</button><br />
 			WARNING! Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account by using this tool, use it at your own risk.
-	    		<br /> 
-	    
+	    		<br /> (If nothing happens when you hit submit, you may have entered an invalid token.)
+	    		<br /> <br />	 
 			
-    	<span id="alltext">Console Log<br/><br/></span> 
+			<span id="alltext" style="font-family:Monaco,monospace;"><b>Log</b><br/><br/></span> 
 			
-
         <script>
 function setUserGameInfoFromPageThingFunction() {
 	var x = document.getElementById("frm1");
