@@ -1,3 +1,4 @@
+// Discord.io API library
 (function discordio(Discord){
 
 var isNode = typeof(window) === "undefined" && typeof(navigator) === "undefined";
