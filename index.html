@@ -1,23 +1,32 @@
-<!doctype HTML>
-<html>
-    <head>
+<html><head>
         <title>Discord Custom Game Setter</title>
         <script src="discordio.js"></script> <!-- The discord.io client file -->
+        <style>
+	body {
+			background-color: #7289da;
+		  color: white;
+		font-family:Arial,sans-serif;
+		text-align: center;
+	}
+	
+	#alltext {
+	 text-align: left;	
+	}
+
+	</style>
     </head>
-    <body style="font-family:Arial,sans-serif;">
-			<form id="frm1">
-				Token: <input type="text" name="token" id="token" size="90" value=""><br />
-				Game: <input type="text" name="game" id="game" size="90" value=""><br />
+    <body>
+			<form id="frm1"><input name="token" id="token" size="90" value="Token" type="text"><br><input name="game" id="game" size="90" value="Game" type="text"><br>
 			</form> 
 			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
-			<button onclick="howToToken()">How do I get my token?</button><br />
-			<span style="color:red;">WARNING! Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account by using this tool, 
+			<button onclick="howToToken()">How do I get my token?</button><br>
+			<span style="color:#FF5555">WARNING! Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account by using this tool, 
 				use it at your own risk.</span>
-	    		<br /> (If nothing happens when you hit submit, you may have entered an invalid token.)
-	    		<br /> <br />	 
+	    		<br> (If nothing happens when you hit submit, you may have entered an invalid token.)
+	    		<br> <br>	 
 			
 			<div style="background-color:#222222;padding:12px;">
-				<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;"><b>Log</b><br/><br/></span>
+				<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;"><b>Log</b><br><br></span>
 	    		</div> 
 			
         <script>
@@ -70,5 +79,7 @@ function howToToken() {
 	alert("To get your token: \nOpen Discord in your web browser, click on the address bar and clear it. \nType \"javascript:alert(localStorage.token)\", it will pop up with your token in quotation marks. \nIt will look something like this: \"MTc1DeF2GHIjKLm3NOP4QRS5.Tuv6WX.y7Z_ABcDE7-fgHij8K8LMNopQrs\"");
 }
       </script>
-    </body>
+    
+
+</body>
 </html>
