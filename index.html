@@ -14,8 +14,12 @@
 				text-align: left;	
 			}
 
+			img.mid {
+				vertical-align: middle;
+			}
+			
 			#cgs {
-				vertical-align: text-top;
+				font-size: 2.5em;
 			}
 			
 			input[type=button], input[type=submit], input[type=reset], button {
@@ -38,10 +42,52 @@
 				text-align: center;
 				border: none;
 				border-bottom: 2px solid white;
-				padding: 12px 20px;
+				padding: 0px 20px 5px 20px;
 				margin: 8px 0;
 				box-sizing: border-box;
 				background-color: #7289da;
+			}
+			
+			#msgBox {
+				opacity: 0;
+				display:flex;
+				color: #7289da;
+				height: auto; /* 0 height */
+				width: 50%; /* 0 width - change these with JavaScript */
+				position: fixed; /* Stay in place */
+				z-index: -1; /* Stay underneath till we need it */
+				top: 25%;
+				left: 20%;
+				background-color: white;
+				border-radius: 9px;
+				margin: 5%;
+				padding: 10px;
+				flex-direction: column;
+				overflow: hidden; /* Disable scroll */
+				transition: opacity 0.5s ease-in-out, top 0.5s ease-in-out, z-index 0.1s ease-in-out;
+			}
+			
+			#xbutton {
+				color: red;
+				position: absolute;
+				top: 0px;
+				left: 15px;
+				font-family: Arial, sans-serif;
+				font-weight: bold;
+				font-size: 40;
+			}
+			
+			#xbutton a {text-decoration:none;}
+			#xbutton a:link{color:red;} 
+			#xbutton a:visited{color:red;}
+			#xbutton a:hover{color:#EE0000;}
+			
+			#title {
+				color: black;
+				font-size: 1.2em;
+				margin: 0px 0px 6px 0px;
+				padding-bottom: 8px;
+				border-bottom: 1px solid #DDDDEE;
 			}
 			
 			@font-face{font-family:'Reenie Beanie';src:url(https://discordapp.com/assets/4b861c4f9cb4e4fbec1662f6c6e9186f.woff) format('woff')}
@@ -51,19 +97,17 @@
 			@font-face{font-family:Whitney;font-style:semibold;font-weight:650;src:url(https://discordapp.com/assets/877ef48bf9fcfee590f0ba64de101b59.woff) format('woff')}
 			@font-face{font-family:Whitney;font-style:bold;font-weight:700;src:url(https://discordapp.com/assets/2e004dd717cdc58b9ccb361d286ebbce.woff) format('woff')}
 			@font-face{font-family:SourceCodePro;font-style:normal;font-weight:500;src:url(https://discordapp.com/assets/748ac49ebe4bf0ddfe85c005be7c64c4.woff) format('woff')}
-
-		
 		</style>
     </head>
     <body style="margin-left: 20%;margin-right: 20%;">
-		<div id="cgs"><img src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" width="300px">
-		Custom Game Setter</div>
+		<div id="cgs"><img class="mid" src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" width="300px">
+		 Custom Game Setter</div>
 		<form id="frm1">
 			<input name="token" id="token" size="90" value="Token" type="text"><br>
 			<input name="game" id="game" size="90" value="Game" type="text"><br>
 		</form> 
 		<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
-		<button onclick="howToToken()">How do I get my token?</button><br>
+		<button onclick="dispMsg()">How do I get my token?</button><br>
 		<span style="color:#FF5555">WARNING! Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account by using this tool, 
 			use it at your own risk.</span>
 			<br> (If nothing happens when you hit submit, you may have entered an invalid token.)
@@ -72,6 +116,15 @@
 		<div id="divvy" style="background-color:#222222;padding:12px;">
 			<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;"><b>Log</b><br><br></span>
 		</div> 
+		<div id="fadeblack">
+			<div id="msgBox">
+				<span id="xbutton"><a href="#" onclick="closeMsg()">×</a></span> <br />
+				<span id="title">To get your token:</span> <br />
+				Open Discord in your web browser, click on the address bar and clear it. <br />
+				Type "javascript:alert(localStorage.token)", it will pop up with your token in quotation marks. <br />
+				It will look something like this: "MTc1DeF2GHIjKLm3NOP4QRS5.Tuv6WX.y7Z_ABcDE7-fgHij8K8LMNopQrs"
+			</div>
+		</div>
 		
 	<script>
 if (typeof(Storage) !== "undefined") {
@@ -121,6 +174,21 @@ function addText(add) {
 function howToToken() {
 	alert("To get your token: \nOpen Discord in your web browser, click on the address bar and clear it. \nType \"javascript:alert(localStorage.token)\", it will pop up with your token in quotation marks. \nIt will look something like this: \"MTc1DeF2GHIjKLm3NOP4QRS5.Tuv6WX.y7Z_ABcDE7-fgHij8K8LMNopQrs\"");
 }
+
+/* Set the width of the box to 40% and show it*/
+function dispMsg() {
+	document.getElementById("msgBox").style.zIndex = "1";
+	document.getElementById("msgBox").style.top = "30%";
+	document.getElementById("msgBox").style.opacity = "1";
+}
+
+/* Set the width of the box to 0 and hide it*/
+function closeMsg() {
+	document.getElementById("msgBox").style.opacity = "0";
+	document.getElementById("msgBox").style.top = "25%";
+	document.getElementById("msgBox").style.zIndex = "-1";
+}
+
 	  </script>
 	</body>
 </html>
