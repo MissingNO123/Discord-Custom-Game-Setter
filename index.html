@@ -1,53 +1,78 @@
-<html><head>
+<html>
+	<head>
         <title>Discord Custom Game Setter</title>
         <script src="discordio.js"></script> <!-- The discord.io client file -->
         <style>
-	body {
-			background-color: #7289da;
-		  color: white;
-		font-family: Whitney,'Helvetica Neue',Helvetica,Arial,'Lucida Grande',sans-serif;
-		text-align: center;
-	}
-	
-	#divvy {
-	 text-align: left;	
-	}
-	
-	@font-face{font-family:'Reenie Beanie';src:url(https://discordapp.com/assets/4b861c4f9cb4e4fbec1662f6c6e9186f.woff) format('woff')}
-	@font-face{font-family:Whitney;font-style:light;font-weight:300;src:url(https://discordapp.com/assets/16801bfdf51ed88e69bc90626a3ea436.woff) format('woff')}
-	@font-face{font-family:Whitney;font-style:normal;font-weight:500;src:url(https://discordapp.com/assets/d153359b5d87601d2b9c708b7ae2db02.woff) format('woff')}
-	@font-face{font-family:Whitney;font-style:medium;font-weight:600;src:url(https://discordapp.com/assets/a934ab008c7f6a2274ec441f6be0696a.woff) format('woff')}
-	@font-face{font-family:Whitney;font-style:semibold;font-weight:650;src:url(https://discordapp.com/assets/877ef48bf9fcfee590f0ba64de101b59.woff) format('woff')}
-	@font-face{font-family:Whitney;font-style:bold;font-weight:700;src:url(https://discordapp.com/assets/2e004dd717cdc58b9ccb361d286ebbce.woff) format('woff')}
-	@font-face{font-family:SourceCodePro;font-style:normal;font-weight:500;src:url(https://discordapp.com/assets/748ac49ebe4bf0ddfe85c005be7c64c4.woff) format('woff')}
+			body {
+				background-color: #7289da;
+				color: white;
+				font-family: Whitney,'Helvetica Neue',Helvetica,Arial,'Lucida Grande',sans-serif;
+				text-align: center;
+			}
+			
+			#divvy {
+				text-align: left;	
+			}
+			
+			input[type=button], input[type=submit], input[type=reset], button {
+				background-color: #4CAF50;
+				border: none;
+				color: white;
+				padding: 16px 32px;
+				text-decoration: none;
+				margin: 4px 2px;
+				cursor: pointer;
+			}
+			
+			input[type=text] {
+				color: white;
+				font-family: Whitney,'Helvetica Neue',Helvetica,Arial,'Lucida Grande',sans-serif;
+				text-align: center;
+				border: none;
+				border-bottom: 2px solid white;
+				padding: 12px 20px;
+				margin: 8px 0;
+				box-sizing: border-box;
+				background-color: #7289da;
+			}
+			
+			@font-face{font-family:'Reenie Beanie';src:url(https://discordapp.com/assets/4b861c4f9cb4e4fbec1662f6c6e9186f.woff) format('woff')}
+			@font-face{font-family:Whitney;font-style:light;font-weight:300;src:url(https://discordapp.com/assets/16801bfdf51ed88e69bc90626a3ea436.woff) format('woff')}
+			@font-face{font-family:Whitney;font-style:normal;font-weight:500;src:url(https://discordapp.com/assets/d153359b5d87601d2b9c708b7ae2db02.woff) format('woff')}
+			@font-face{font-family:Whitney;font-style:medium;font-weight:600;src:url(https://discordapp.com/assets/a934ab008c7f6a2274ec441f6be0696a.woff) format('woff')}
+			@font-face{font-family:Whitney;font-style:semibold;font-weight:650;src:url(https://discordapp.com/assets/877ef48bf9fcfee590f0ba64de101b59.woff) format('woff')}
+			@font-face{font-family:Whitney;font-style:bold;font-weight:700;src:url(https://discordapp.com/assets/2e004dd717cdc58b9ccb361d286ebbce.woff) format('woff')}
+			@font-face{font-family:SourceCodePro;font-style:normal;font-weight:500;src:url(https://discordapp.com/assets/748ac49ebe4bf0ddfe85c005be7c64c4.woff) format('woff')}
 
-	</style>
+		</style>
     </head>
-    <body>
-	<img src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg">
-			<form id="frm1"><input name="token" id="token" size="90" value="Token" type="text"><br><input name="game" id="game" size="90" value="Game" type="text"><br>
-			</form> 
-			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
-			<button onclick="howToToken()">How do I get my token?</button><br>
-			<span style="color:#FF5555">WARNING! Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account by using this tool, 
-				use it at your own risk.</span>
-	    		<br> (If nothing happens when you hit submit, you may have entered an invalid token.)
-	    		<br> <br>	 
-			
-			<div id="divvy" style="background-color:#222222;padding:12px;">
-				<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;"><b>Log</b><br><br></span>
-	    		</div> 
-			
-        <script>
+    <body style="margin-left: 20%;margin-right: 20%;">
+		<img src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" width="300px">
+		<span id="cgs" style="padding-bottom: 0px;border-bottom-width: 0px;border-bottom-style: solid;">Custom Game Setter</span>
+		<form id="frm1">
+			<input name="token" id="token" size="90" value="Token" type="text"><br>
+			<input name="game" id="game" size="90" value="Game" type="text"><br>
+		</form> 
+		<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
+		<button onclick="howToToken()">How do I get my token?</button><br>
+		<span style="color:#FF5555">WARNING! Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account by using this tool, 
+			use it at your own risk.</span>
+			<br> (If nothing happens when you hit submit, you may have entered an invalid token.)
+			<br> <br>	 
+		
+		<div id="divvy" style="background-color:#222222;padding:12px;">
+			<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;"><b>Log</b><br><br></span>
+		</div> 
+		
+	<script>
 if (typeof(Storage) !== "undefined") {
-    if (localStorage.getItem("token") == undefined) {
-	    localStorage.setItem("token", "");
-    } else {
-    	document.getElementById("token").value = localStorage.getItem("token");
-    }
+	if (localStorage.getItem("token") == undefined) {
+		localStorage.setItem("token", "");
+	} else {
+		document.getElementById("token").value = localStorage.getItem("token");
+	}
 } else {
-    //no storage 4 u
-    
+	//no storage 4 u
 }
 		
 function setUserGameInfoFromPageThingFunction() {
@@ -87,9 +112,6 @@ function addText(add) {
 function howToToken() {
 	alert("To get your token: \nOpen Discord in your web browser, click on the address bar and clear it. \nType \"javascript:alert(localStorage.token)\", it will pop up with your token in quotation marks. \nIt will look something like this: \"MTc1DeF2GHIjKLm3NOP4QRS5.Tuv6WX.y7Z_ABcDE7-fgHij8K8LMNopQrs\"");
 }
-      </script>
-    
-
-
-
-</body></html>
+	  </script>
+	</body>
+</html>
