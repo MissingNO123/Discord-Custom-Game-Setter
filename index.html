@@ -13,14 +13,22 @@
 			#divvy {
 				text-align: left;	
 			}
+
+			#cgs {
+				vertical-align: text-top;
+			}
 			
 			input[type=button], input[type=submit], input[type=reset], button {
-				background-color: #4CAF50;
+				background-color: white;
 				border: none;
-				color: white;
+				border-radius:3px;
+				color: #7289da;
+				font-family: Whitney,'Helvetica Neue',Helvetica,Arial,'Lucida Grande',sans-serif;
 				padding: 16px 32px;
 				text-decoration: none;
-				margin: 4px 2px;
+				width: 250px;
+				margin: 10px;
+				margin-top: 0;
 				cursor: pointer;
 			}
 			
@@ -44,11 +52,12 @@
 			@font-face{font-family:Whitney;font-style:bold;font-weight:700;src:url(https://discordapp.com/assets/2e004dd717cdc58b9ccb361d286ebbce.woff) format('woff')}
 			@font-face{font-family:SourceCodePro;font-style:normal;font-weight:500;src:url(https://discordapp.com/assets/748ac49ebe4bf0ddfe85c005be7c64c4.woff) format('woff')}
 
+		
 		</style>
     </head>
     <body style="margin-left: 20%;margin-right: 20%;">
-		<img src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" width="300px">
-		<span id="cgs" style="padding-bottom: 0px;border-bottom-width: 0px;border-bottom-style: solid;">Custom Game Setter</span>
+		<div id="cgs"><img src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" width="300px">
+		Custom Game Setter</div>
 		<form id="frm1">
 			<input name="token" id="token" size="90" value="Token" type="text"><br>
 			<input name="game" id="game" size="90" value="Game" type="text"><br>
