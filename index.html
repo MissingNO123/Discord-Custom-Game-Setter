@@ -79,7 +79,7 @@
 				width: 100%;
 				height: 100%;
 				background-color: rgba(0,0,0,0.4);
-				document.getElementById("msgBox").style.transition = "opacity 0.5s ease-in-out, top 0.5s ease-in-out, z-index 0.5s ease-in";
+				transition: opacity 0.5s ease-in-out, top 0.5s ease-in-out, z-index 0.5s ease-in;
 			}
 			
 			#msgBox {
@@ -169,7 +169,7 @@
 			
 			
 			<div id="msgBox">
-				<span id="xbutton"><a href="#" onclick="closeMsg()">×</a></span> <br />
+				<span id="xbutton"><a href="#" onclick="closeMsg()">&#215;</a></span> <br />
 				<span id="title">To get your token:</span> <br />
 				Open Discord in your web browser, click on the address bar and clear it, then type <br />
 				<a style="color:black; display:inline;">javascript:alert(localStorage.token)</a><br />
