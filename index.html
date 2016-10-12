@@ -1,6 +1,7 @@
 <!-- DOCTYPE html -->
 <html>
 	<head>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Discord Custom Game Setter</title>
         <script src="discordio.js"></script> <!-- The discord.io client file -->
         <style>
@@ -11,6 +12,8 @@
 			
 			#content {
 				padding-top: 20px;
+				margin-left: 20%;
+				margin-right: 20%;
 				color: white;
 				font-family: Whitney,'Helvetica Neue',Helvetica,Arial,'Lucida Grande',sans-serif;
 				text-align: center;
@@ -22,10 +25,17 @@
 
 			img.mid {
 				vertical-align: middle;
+				width: 300px;
 			}
 			
 			#cgs {
 				font-size: 2.5em;
+			}
+			
+			#cgsmobile {
+				font-size: 1.5em;
+				display:none;
+				margin-bottom: 10px;
 			}
 			
 			input[type=button], input[type=submit], input[type=reset], button {
@@ -114,6 +124,15 @@
 				border-bottom: 1px solid #DDDDEE;
 			}
 			
+			@media only screen and (max-width: 500px) {
+				#content {padding-top: 10px; margin-left:10%; margin-right:10%;}
+				img.mid {vertical-align: none; width:200px}
+				#cgs{display:none;}
+				#cgsmobile{display:inline;}
+				input[type=text] {width:100%;}
+				#msgBox {width:80%;left:2.5%}
+			}
+			
 			@font-face{font-family:'Reenie Beanie';src:url(https://discordapp.com/assets/4b861c4f9cb4e4fbec1662f6c6e9186f.woff) format('woff')}
 			@font-face{font-family:Whitney;font-style:light;font-weight:300;src:url(https://discordapp.com/assets/16801bfdf51ed88e69bc90626a3ea436.woff) format('woff')}
 			@font-face{font-family:Whitney;font-style:normal;font-weight:500;src:url(https://discordapp.com/assets/d153359b5d87601d2b9c708b7ae2db02.woff) format('woff')}
@@ -125,9 +144,13 @@
     </head>
     <body>
 		<div id="fadeblack"></div>
-		<div id="content" style="margin-left: 20%;margin-right: 20%;">
-			<div id="cgs"><a href="http://discord.gg" target="_blank"><img class="mid" src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" width="300px" alt="Discord"></a>
-			 Custom Game Setter</div>
+		<div id="content">
+			<div id="cgs"><a href="http://discord.gg" target="_blank"><img class="mid" src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" alt="Discord"></a>
+			 Custom Game Setter
+			</div>
+			<div id="cgsmobile"><a href="http://discord.gg" target="_blank"><img class="mid" src="https://discordapp.com/assets/4f004ac9be168ac6ee18fc442a52ab53.svg" alt="Discord"></a>
+			<br />Custom Game Setter
+			</div>
 			<form id="frm1">
 				<input name="token" id="token" size="90" placeholder="Input Your Token Here" type="text"><br>
 				<input name="game" id="game" size="90" placeholder="Name of the Game You Want Others to See" type="text"><br>
@@ -139,14 +162,14 @@
 				<br> (If nothing happens when you hit submit, you may have entered an invalid token.)
 				<br> <br>	 
 			
-			<div id="divvy" style="background-color:#222222;padding:12px;">
-				<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;"><b>Log</b><br><br></span>
+			<div id="divvy" style="background-color:#222222;padding:12px;" onclick="showLog()"> <a id="clicktoshow">Click to show Log</a><br />
+				<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;display:none;"><br /><b>Log</b><br><br></span>
 			</div> 
 			
 			
 			
 			<div id="msgBox">
-				<span id="xbutton"><a href="#" onclick="closeMsg()">&#215;</a></span> <br />
+				<span id="xbutton"><a href="#" onclick="closeMsg()">×</a></span> <br />
 				<span id="title">To get your token:</span> <br />
 				Open Discord in your web browser, click on the address bar and clear it, then type <br />
 				<a style="color:black; display:inline;">javascript:alert(localStorage.token)</a><br />
@@ -205,12 +228,25 @@ function dispMsg() {
 /* Set the width of the box to 0 and hide it*/
 function closeMsg() {
 	document.getElementById("msgBox").style.transition = "opacity 0.5s ease-in-out, top 0.5s ease-in-out, z-index 0.5s ease-in";
-	document.getElementById("fadeblack").style.transition = "opacity 0.5s ease-in-out, top 0.5s ease-in-out, z-index 0.5s ease-in";
+	document.getElementById("fadeblack").style.transition = "opacity 0.5s ease-in-out, top 0.5s ease-in-out, z-index 0.6s ease-in";
 	document.getElementById("msgBox").style.opacity = "0";
 	document.getElementById("fadeblack").style.opacity = "0";
 	document.getElementById("msgBox").style.top = "25%";
 	document.getElementById("msgBox").style.zIndex = "-1";
 	document.getElementById("fadeblack").style.zIndex = "-1";
+}
+
+function showLog() {
+	document.getElementById("alltext").style.display = "block";
+	document.getElementById("clicktoshow").innerHTML = "Click to hide log";
+	document.getElementById("divvy").onclick = function(){ hideLog(); };	
+}
+
+function hideLog() {
+	document.getElementById("alltext").style.display = "none";
+	document.getElementById("clicktoshow").innerHTML = "Click to show log";
+	document.getElementById("divvy").onclick = function(){ showLog(); } ;	
+	
 }
 
 	  </script>
