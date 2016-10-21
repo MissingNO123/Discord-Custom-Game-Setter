@@ -4,20 +4,26 @@
         <title>Pick a better browser!</title>
 		<style type="text/css">
 			img {
-				width: 66%;
-				margin: auto;
+				width: 200px;
+				display: inline; /* fixes another IE bug */
+			}
+			
+			button {
+				width: 201px;
 			}
 		</style>
     </head>
 	<body>
+	<center>
 		<button onclick="window.location.href='http://www.google.com/chrome'">
 			<img src="chrome.jpg"/>
-		</button>
+		</button> <br />
 		<button onclick="window.location.href='http://www.firefox.com'">
 			<img src="firefox.jpg"/>
-		</button>
+		</button> <br />
 		<button onclick="alert('Microsoft Edge comes included with all copies of Windows 10, and the icon should be in the taskbar. \nClick it now and come back when you have a better browser.');">
 			<img src="edjy.jpg"/>
 		</button>
+	</center>
 	</body>
 </html>
