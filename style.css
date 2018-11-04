@@ -117,7 +117,7 @@
 				border-bottom: 1px solid #DDDDEE;
 			}
 			
-			@media only screen and (max-width: 768px) {
+			@media only screen and (max-width: 908px) {
 				#content {padding-top: 10px; margin-left:10%; margin-right:10%;}
 				img.mid {vertical-align: none; width:200px}
 				#cgs{display:none;}

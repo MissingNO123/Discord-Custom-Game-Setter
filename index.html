@@ -46,9 +46,11 @@
 			<form id="frm1">
 				<input name="token" id="token" size="90" placeholder="Input Your Token Here" type="text"><br>
 				<input name="game" id="game" size="90" placeholder="Name of the Game You Want Others to See" type="text"><br>
-				  <input type="radio" name="playType" value="0" checked> Playing
-				  <input type="radio" name="playType" value="3"> Watching
-				  <input type="radio" name="playType" value="2"> Listening to
+				<div class="rBtn">
+					<input type="radio" name="playType" value="0" checked> Playing
+					<input type="radio" name="playType" value="3"> Watching
+					<input type="radio" name="playType" value="2"> Listening to
+				</div>
 			</form> 
 			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
 			<button onclick="dispMsg()">How do I get my token?</button><br>
