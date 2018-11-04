@@ -1,7 +1,7 @@
 <!-- DOCTYPE html -->
 <html>
 	<head>
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">	
 		<link rel="icon" type="image/png" href="favicon.png">
 		<link rel="stylesheet" type="text/css" href="style.css">
         <title>Discord Custom Game Setter</title>
@@ -46,6 +46,9 @@
 			<form id="frm1">
 				<input name="token" id="token" size="90" placeholder="Input Your Token Here" type="text"><br>
 				<input name="game" id="game" size="90" placeholder="Name of the Game You Want Others to See" type="text"><br>
+				  <input type="radio" name="playType" value="0" checked> Playing
+				  <input type="radio" name="playType" value="3"> Watching
+				  <input type="radio" name="playType" value="2"> Listening to
 			</form> 
 			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
 			<button onclick="dispMsg()">How do I get my token?</button><br>

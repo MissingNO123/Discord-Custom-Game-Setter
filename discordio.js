@@ -1,35 +1,35 @@
-// Discord.io API library
+"use strict";
 (function discordio(Discord){
-
 var isNode = typeof(window) === "undefined" && typeof(navigator) === "undefined";
 var CURRENT_VERSION = "2.x.x",
-	GATEWAY_VERSION = 5,
-	LARGE_THRESHOLD = 250,
-	Endpoints;
+    GATEWAY_VERSION = 6,
+    LARGE_THRESHOLD = 250,
+    CONNECT_WHEN = null,
+    Endpoints, Payloads;
 
 if (isNode) {
-	var Util        = require('util'),
-		FS          = require('fs'),
-		UDP         = require('dgram'),
-		Zlib        = require('zlib'),
-		DNS         = require('dns'),
-		Stream      = require('stream'),
-		BN          = require('path').basename,
-		EE          = require('events').EventEmitter,
-		requesters  = {
-			http:     require('http'),
-			https:    require('https')
-		},
-		ChildProc   = require('child_process'),
-		URL         = require('url'),
-		//NPM Modules
-		NACL        = require('tweetnacl'),
-		Opus        = null
+    var Util        = require('util'),
+        FS          = require('fs'),
+        UDP         = require('dgram'),
+        Zlib        = require('zlib'),
+        DNS         = require('dns'),
+        Stream      = require('stream'),
+        BN          = require('path').basename,
+        EE          = require('events').EventEmitter,
+        requesters  = {
+            http:     require('http'),
+            https:    require('https')
+        },
+        ChildProc   = require('child_process'),
+        URL         = require('url'),
+        //NPM Modules
+        NACL        = require('tweetnacl'),
+        Opus        = null;
 }
 
 /* --- Version Check --- */
 try {
-	CURRENT_VERSION = require('../package.json').version;		
+	CURRENT_VERSION = require('../package.json').version;
 } catch(e) {}
 if (!isNode) CURRENT_VERSION = CURRENT_VERSION + "-browser";
 
@@ -45,27 +45,25 @@ if (!isNode) CURRENT_VERSION = CURRENT_VERSION + "-browser";
 Discord.Client = function DiscordClient(options) {
 	if (!isNode) Emitter.call(this);
 	if (!options || options.constructor.name !== 'Object') return console.error("An Object is required to create the discord.io client.");
-	if (typeof(options.messageCacheLimit) !== 'number') options.messageCacheLimit = 50;
 
 	applyProperties(this, [
 		["_ws", null],
 		["_uIDToDM", {}],
+		["_ready", false],
 		["_vChannels", {}],
 		["_messageCache", {}],
 		["_connecting", false],
 		["_mainKeepAlive", null],
 		["_req", APIRequest.bind(this)],
-		["_messageCacheLimit", options.messageCacheLimit],
+		["_shard", validateShard(options.shard)],
+		["_messageCacheLimit", typeof(options.messageCacheLimit) === 'number' ? options.messageCacheLimit : 50],
 	]);
 
-	this.presenceStatus = "offline";
 	this.connected = false;
 	this.inviteURL = null;
 	this.connect = this.connect.bind(this, options);
 
-	if (options.autorun && options.autorun === true) {
-		this.connect();
-	}
+	if (options.autorun === true) this.connect();
 };
 if (isNode) Emitter.call(Discord.Client);
 
@@ -74,21 +72,38 @@ var DCP = Discord.Client.prototype;
 /**
  * Manually initiate the WebSocket connection to Discord.
  */
-DCP.connect = function() {
-	if (this.connected === false && this._connecting === false) return init(this, arguments[0]);
+DCP.connect = function () {
+	var opts = arguments[0];
+	if (!this.connected && !this._connecting) return setTimeout(function() {
+		init(this, opts);
+		CONNECT_WHEN = Math.max(CONNECT_WHEN, Date.now()) + 6000;
+	}.bind(this), Math.max( 0, CONNECT_WHEN - Date.now() ));
 };
 
 /**
  * Disconnect the WebSocket connection to Discord.
  */
-DCP.disconnect = function() {
-	if (this._ws) this._ws.close();
+DCP.disconnect = function () {
+	if (this._ws) return this._ws.close(1000, "Manual disconnect"), log(this, "Manual disconnect called, websocket closed");
+	return log(this, Discord.LogLevels.Warn, "Manual disconnect called with no WebSocket active, ignored");
+};
+
+/**
+ * Retrieve a user object from Discord, Bot only endpoint. You don't have to share a server with this user.
+ * @arg {Object} input
+ * @arg {Snowflake} input.userID
+ */
+DCP.getUser = function(input, callback) {
+	if (!this.bot) return handleErrCB("[getUser] This account is a 'user' type account, and cannot use 'getUser'. Only bots can use this endpoint.", callback);
+	this._req('get', Endpoints.USER(input.userID), function(err, res) {
+		handleResCB("Could not get user", err, res, callback);
+	});
 };
 
 /**
  * Edit the client's user information.
  * @arg {Object} input
- * @arg {String} input.avatar - The last part of a Base64 Data URI. `fs.readFileSync('image.jpg', 'base64')` is enough.
+ * @arg {String<Base64>} input.avatar - The last part of a Base64 Data URI. `fs.readFileSync('image.jpg', 'base64')` is enough.
  * @arg {String} input.username - A username.
  * @arg {String} input.email - [User only] An email.
  * @arg {String} input.password - [User only] Your current password.
@@ -118,35 +133,19 @@ DCP.editUserInfo = function(input, callback) {
 /**
  * Change the client's presence.
  * @arg {Object} input
- * @arg {Number|null} input.idle_since - Use a Number before the current point in time.
+ * @arg {String|null} input.status - Used to set the status. online, idle, dnd, invisible, and offline are the possible states.
+ * @arg {Number|null} input.since - Optional, use a Number before the current point in time.
+ * @arg {Boolean|null} input.afk - Optional, changes how Discord handles push notifications.
  * @arg {Object|null} input.game - Used to set game information.
  * @arg {String|null} input.game.name - The name of the game.
- * @arg {Number|null} input.game.type - Streaming activity, 0 for nothing, 1 for Twitch.
+ * @arg {Number|null} input.game.type - Activity type, 0 for game, 1 for Twitch.
  * @arg {String|null} input.game.url - A URL matching the streaming service you've selected.
  */
 DCP.setPresence = function(input) {
-	var payload = {
-		op: 3,
-		d: {
-			idle_since: input.idle_since || null,
-			game: type(input.game) === 'object' ?
-					{
-						name: input.game.name ? String(input.game.name) : null,
-						type: input.game.type ? Number(input.game.type) : null,
-						url: input.game.url ? String(input.game.url) : null
-						
-					} :
-					null
-		}
-	};
-	
+	var payload = Payloads.STATUS(input);
 	send(this._ws, payload);
 
-	if (payload.d.idle_since === null) {
-		this.presenceStatus = 'online';
-		return;
-	}
-	this.presenceStatus = 'idle';
+	this.presence = payload.d;
 };
 
 /**
@@ -180,13 +179,20 @@ DCP.getAccountSettings = function(callback) {
 DCP.uploadFile = function(input, callback) {
 	/* After like 15 minutes of fighting with Request, turns out Discord doesn't allow multiple files in one message...
 	despite having an attachments array.*/
-	var file,
-		client = this, multi = new Multipart(),	message = generateMessage(input.message || ""), 
-		isBuffer = (input.file instanceof Buffer), isString = (type(input.file) === 'string');
-	
-	if (!isBuffer && !isString) return handleErrCB("[uploadFile] uploadFile requires a String or Buffer as the 'file' value", callback);
-	if (isBuffer) if (input.filename) file = input.file; else return handleErrCB("[uploadFile] uploadFile requires a 'filename' value to be set if using a Buffer", callback);
-	if (isString) try { file = FS.readFileSync(input.file); } catch(e) { return handleErrCB("[uploadFile] File does not exist: " + input.file, callback); }
+	var file, client, multi, message, isBuffer, isString;
+
+	client = this;
+	multi = new Multipart();
+	message = generateMessage(input.message || "");
+	isBuffer = (input.file instanceof Buffer);
+	isString = (type(input.file) === 'string');
+
+	if (!isBuffer && !isString) return handleErrCB("uploadFile requires a String or Buffer as the 'file' value", callback);
+	if (isBuffer) {
+		if (!input.filename) return handleErrCB("uploadFile requires a 'filename' value to be set if using a Buffer", callback);
+		file = input.file;
+	}
+	if (isString) try { file = FS.readFileSync(input.file); } catch(e) { return handleErrCB("File does not exist: " + input.file, callback); }
 
 	[
 		["content", message.content],
@@ -194,15 +200,8 @@ DCP.uploadFile = function(input, callback) {
 		["tts", false],
 		["nonce", message.nonce],
 		["file", file, input.filename || BN(input.file)]
-	].forEach(function(a) {
-		multi.append(a);
-	});
+	].forEach(multi.append, multi);
 	multi.finalize();
-	/*multi.append(["content", message.content]);
-	multi.append(["mentions", ""]);
-	multi.append(["tts", false]);
-	multi.append(["nonce", message.nonce]);
-	multi.append(["file", file, input.filename || BN(input.file)]);*/
 
 	resolveID(client, input.to, function(channelID) {
 		client._req('post', Endpoints.MESSAGES(channelID), multi, function(err, res) {
@@ -210,17 +209,19 @@ DCP.uploadFile = function(input, callback) {
 		});
 	});
 };
+
 /**
  * Send a message to a channel.
  * @arg {Object} input
  * @arg {Snowflake} input.to - The target Channel or User ID.
  * @arg {String} input.message - The message content.
+ * @arg {Object} [input.embed] - An embed object to include
  * @arg {Boolean} [input.tts] - Enable Text-to-Speech for this message.
- * @arg {String<Number>} [input.nonce] - Number-used-only-ONCE. The Discord client uses this to change the message color from grey to white.
+ * @arg {Number} [input.nonce] - Number-used-only-ONCE. The Discord client uses this to change the message color from grey to white.
  * @arg {Boolean} [input.typing] - Indicates whether the message should be sent with simulated typing. Based on message length.
  */
 DCP.sendMessage = function(input, callback) {
-	var message = generateMessage(input.message);
+	var message = generateMessage(input.message || '', input.embed);
 	message.tts = (input.tts === true);
 	message.nonce = input.nonce || message.nonce;
 
@@ -229,7 +230,7 @@ DCP.sendMessage = function(input, callback) {
 			this,
 			input.to,
 			message,
-			( (String(input.message).length * 0.12) * 1000 ),
+			( (message.content.length * 0.12) * 1000 ),
 			callback
 		);
 	}
@@ -253,18 +254,36 @@ DCP.getMessage = function(input, callback) {
  * Pull an array of message objects from Discord.
  * @arg {Object} input
  * @arg {Snowflake} input.channelID - The channel ID to pull the messages from.
- * @arg {Number} [input.limit] - How many messages to pull, defaults to 50, max is 100.
+ * @arg {Number} [input.limit] - How many messages to pull, defaults to 50.
  * @arg {Snowflake} [input.before] - Pull messages before this message ID.
  * @arg {Snowflake} [input.after] - Pull messages after this message ID.
  */
 DCP.getMessages = function(input, callback) {
-	var qs = { limit: (typeof(input.limit) !== 'number' ? 50 : input.limit) };
+	var client = this, qs = {}, messages = [], lastMessageID = "";
+	var total = typeof(input.limit) !== 'number' ? 50 : input.limit;
+
 	if (input.before) qs.before = input.before;
 	if (input.after) qs.after = input.after;
 
-	this._req('get', Endpoints.MESSAGES(input.channelID) + qstringify(qs), function(err, res) {
-		handleResCB("Unable to get messages", err, res, callback);
-	});
+	(function getMessages() {
+		if (total > 100) {
+			qs.limit = 100;
+			total = total - 100;
+		} else {
+			qs.limit = total;
+		}
+
+		if (messages.length >= input.limit) return call(callback, [null, messages]);
+
+		client._req('get', Endpoints.MESSAGES(input.channelID) + qstringify(qs), function(err, res) {
+			if (err) return handleErrCB("Unable to get messages", callback);
+			messages = messages.concat(res.body);
+			lastMessageID = messages[messages.length - 1] && messages[messages.length - 1].id;
+			if (lastMessageID) qs.before = lastMessageID;
+			if (!res.body.length < qs.limit) return call(callback, [null, messages]);
+			return setTimeout(getMessages, 1000);
+		});
+	})();
 };
 
 /**
@@ -272,10 +291,11 @@ DCP.getMessages = function(input, callback) {
  * @arg {Object} input
  * @arg {Snowflake} input.channelID
  * @arg {Snowflake} input.messageID
- * @arg {Snowflake} input.message - The new message content
+ * @arg {String} input.message - The new message content
+ * @arg {Object} [input.embed] - The new Discord Embed object
  */
 DCP.editMessage = function(input, callback) {
-	this._req('patch', Endpoints.MESSAGES(input.channelID, input.messageID), generateMessage(input.message), function(err, res) {
+	this._req('patch', Endpoints.MESSAGES(input.channelID, input.messageID), generateMessage(input.message || '', input.embed), function(err, res) {
 		handleResCB("Unable to edit message", err, res, callback);
 	});
 };
@@ -322,7 +342,7 @@ DCP.pinMessage = function(input, callback) {
  * @arg {Snowflake} input.channelID
  */
 DCP.getPinnedMessages = function(input, callback) {
-	this._req('get', Endpoints.PINNED_MESSAGES(input.channelD), function(err, res) {
+	this._req('get', Endpoints.PINNED_MESSAGES(input.channelID), function(err, res) {
 		handleResCB("Unable to get pinned messages", err, res, callback);
 	});
 };
@@ -371,6 +391,72 @@ DCP.fixMessage = function(message) {
 	});
 };
 
+/**
+ * Add an emoji reaction to a message.
+ * @arg {Object} input
+ * @arg {Snowflake} input.channelID
+ * @arg {Snowflake} input.messageID
+ * @arg {String} input.reaction - Either the emoji unicode or the emoji name:id/object.
+ */
+DCP.addReaction = function(input, callback) {
+	var client = this;
+	resolveID(client, input.channelID, function(channelID) {
+		client._req('put', Endpoints.USER_REACTIONS(channelID, input.messageID, stringifyEmoji(input.reaction)), function(err, res) {
+			handleResCB("Unable to add reaction", err, res, callback);
+		});
+	});
+};
+
+/**
+ * Get an emoji reaction of a message.
+ * @arg {Object} input
+ * @arg {Snowflake} input.channelID
+ * @arg {Snowflake} input.messageID
+ * @arg {String} input.reaction - Either the emoji unicode or the emoji name:id/object.
+ * @arg {String} [input.limit]
+ */
+DCP.getReaction = function(input, callback) {
+	var qs = { limit: (typeof(input.limit) !== 'number' ? 100 : input.limit) };
+	var client = this;
+	resolveID(client, input.channelID, function(channelID) {
+		client._req('get', Endpoints.MESSAGE_REACTIONS(channelID, input.messageID, stringifyEmoji(input.reaction)) + qstringify(qs), function(err, res) {
+			handleResCB("Unable to get reaction", err, res, callback);
+		});
+	});
+};
+
+/**
+ * Remove an emoji reaction from a message.
+ * @arg {Object} input
+ * @arg {Snowflake} input.channelID
+ * @arg {Snowflake} input.messageID
+ * @arg {Snowflake} [input.userID]
+ * @arg {String} input.reaction - Either the emoji unicode or the emoji name:id/object.
+ */
+DCP.removeReaction = function(input, callback) {
+	var client = this;
+	resolveID(client, input.channelID, function(channelID) {
+		client._req('delete', Endpoints.USER_REACTIONS(channelID, input.messageID, stringifyEmoji(input.reaction), input.userID), function(err, res) {
+			handleResCB("Unable to remove reaction", err, res, callback);
+		});
+	});
+};
+
+/**
+ * Remove all emoji reactions from a message.
+ * @arg {Object} input
+ * @arg {Snowflake} input.channelID
+ * @arg {Snowflake} input.messageID
+ */
+DCP.removeAllReactions = function(input, callback) {
+	var client = this;
+	resolveID(client, input.channelID, function(channelID) {
+		client._req('delete', Endpoints.MESSAGE_REACTIONS(channelID, input.messageID), function(err, res) {
+			handleResCB("Unable to remove reactions", err, res, callback);
+		});
+	});
+};
+
 /* - DiscordClient - Methods - Server Management - */
 
 /**
@@ -390,19 +476,28 @@ DCP.kick = function(input, callback) {
  * @arg {Object} input
  * @arg {Snowflake} input.serverID
  * @arg {Snowflake} input.userID
+ * @arg {String} input.reason
  * @arg {Number} [input.lastDays] - Removes their messages up until this point, either 1 or 7 days.
  */
 DCP.ban = function(input, callback) {
-	if (input.lastDays) {
-		input.lastDays = Number(input.lastDays);
-		input.lastDays = Math.min(input.lastDays, 7);
-		input.lastDays = Math.max(input.lastDays, 1);
+    var url = Endpoints.BANS(input.serverID, input.userID);
+    var opts = {};
+
+    if (input.lastDays) {
+        input.lastDays = Number(input.lastDays);
+        input.lastDays = Math.min(input.lastDays, 7);
+        input.lastDays = Math.max(input.lastDays, 1);
+        opts["delete-message-days"] = input.lastDays;
 	}
 
-	this._req('put', Endpoints.BANS(input.serverID, input.userID) + (input.lastDays ? "?delete-message-days=" + input.lastDays : ""), function(err, res) {
-		handleResCB("Could not ban user", err, res, callback);
-	});
-};
+    if (input.reason) opts.reason = input.reason;
+
+    url += qstringify(opts);
+
+    this._req('put', url, function(err, res) {
+        handleResCB("Could not ban user", err, res, callback);
+    });
+}
 
 /**
  * Unban a user from a server.
@@ -454,7 +549,7 @@ DCP.unmute = function(input, callback) {
 };
 
 /**
- * Server-deafan a user.
+ * Server-deafen a user.
  * @arg {Object} input
  * @arg {Snowflake} input.serverID
  * @arg {Snowflake} input.userID
@@ -466,7 +561,7 @@ DCP.deafen = function(input, callback) {
 };
 
 /**
- * Remove the server-deafan from a user.
+ * Remove the server-deafen from a user.
  * @arg {Object} input
  * @arg {Snowflake} input.serverID
  * @arg {Snowflake} input.userID
@@ -477,6 +572,82 @@ DCP.undeafen = function(input, callback) {
 	});
 };
 
+/**
+ * Self-mute the client from speaking in all voice channels.
+ * @arg {Snowflake} serverID
+ */
+DCP.muteSelf = function(serverID, callback) {
+	var server = this.servers[serverID], channelID, voiceSession;
+	if (!server) return handleErrCB(("Cannot find the server provided: " + serverID), callback);
+	
+	server.self_mute = true;
+	
+	if (!server.voiceSession) return call(callback, [null]);
+	
+	voiceSession = server.voiceSession;
+	voiceSession.self_mute = true;
+	channelID = voiceSession.channelID;
+	if (!channelID) return call(callback, [null]);
+	return call(callback, [send(this._ws, Payloads.UPDATE_VOICE(serverID, channelID, true, server.self_deaf))]);
+};
+
+/**
+ * Remove the self-mute from the client.
+ * @arg {Snowflake} serverID
+ */
+DCP.unmuteSelf = function(serverID, callback) {
+	var server = this.servers[serverID], channelID, voiceSession;
+	if (!server) return handleErrCB(("Cannot find the server provided: " + serverID), callback);
+	
+	server.self_mute = false;
+	
+	if (!server.voiceSession) return call(callback, [null]);
+	
+	voiceSession = server.voiceSession;
+	voiceSession.self_mute = false;
+	channelID = voiceSession.channelID;
+	if (!channelID) return call(callback, [null]);
+	return call(callback, [send(this._ws, Payloads.UPDATE_VOICE(serverID, channelID, false, server.self_deaf))]);
+};
+
+/**
+ * Self-deafen the client.
+ * @arg {Snowflake} serverID
+ */
+DCP.deafenSelf = function(serverID, callback) {
+	var server = this.servers[serverID], channelID, voiceSession;
+	if (!server) return handleErrCB(("Cannot find the server provided: " + serverID), callback);
+	
+	server.self_deaf = true;
+	
+	if (!server.voiceSession) return call(callback, [null]);
+	
+	voiceSession = server.voiceSession;
+	voiceSession.self_deaf = true;
+	channelID = voiceSession.channelID;
+	if (!channelID) return call(callback, [null]);
+	return call(callback, [send(this._ws, Payloads.UPDATE_VOICE(serverID, channelID, server.self_mute, true))]);
+};
+
+/**
+ * Remove the self-deafen from the client.
+ * @arg {Snowflake} serverID
+ */
+DCP.undeafenSelf = function(serverID, callback) {
+	var server = this.servers[serverID], channelID, voiceSession;
+	if (!server) return handleErrCB(("Cannot find the server provided: " + serverID), callback);
+	
+	server.self_deaf = false;
+	
+	if (!server.voiceSession) return call(callback, [null]);
+	
+	voiceSession = server.voiceSession;
+	voiceSession.self_deaf = false;
+	channelID = voiceSession.channelID;
+	if (!channelID) return call(callback, [null]);
+	return call(callback, [send(this._ws, Payloads.UPDATE_VOICE(serverID, channelID, server.self_mute, false))]);
+};
+
 /*Bot server management actions*/
 
 /**
@@ -484,13 +655,13 @@ DCP.undeafen = function(input, callback) {
  * @arg {Object} input
  * @arg {String} input.name - The server's name
  * @arg {String} [input.region] - The server's region code, check the Gitbook documentation for all of them.
- * @arg {String} [input.icon] - The last part of a Base64 Data URI. `fs.readFileSync('image.jpg', 'base64')` is enough.
+ * @arg {String<Base64>} [input.icon] - The last part of a Base64 Data URI. `fs.readFileSync('image.jpg', 'base64')` is enough.
  */
 DCP.createServer = function(input, callback) {
 	var payload, client = this;
 	payload = {icon: null, name: null, region: null};
 	for (var key in input) {
-		if (Object.keys(payload).indexOf(key) === -1) continue;
+		if (Object.keys(payload).indexOf(key) < 0) continue;
 		payload[key] = input[key];
 	}
 	if (input.icon) payload.icon = "data:image/jpg;base64," + input.icon;
@@ -498,7 +669,7 @@ DCP.createServer = function(input, callback) {
 	client._req('post', Endpoints.SERVERS(), payload, function(err, res) {
 		try {
 			client.servers[res.body.id] = {};
-			for (var skey in res.body) client.servers[res.body.id][skey] = res.body[skey];
+			copyKeys(res.body, client.servers[res.body.id]);
 		} catch(e) {}
 		handleResCB("Could not create server", err, res, callback);
 	});
@@ -517,7 +688,7 @@ DCP.createServer = function(input, callback) {
 DCP.editServer = function(input, callback) {
 	var payload, serverID = input.serverID, server, client = this;
 	if (!client.servers[serverID]) return handleErrCB(("[editServer] Server " + serverID + " not found."), callback);
-	
+
 	server = client.servers[serverID];
 	payload = {
 		name: server.name,
@@ -528,7 +699,7 @@ DCP.editServer = function(input, callback) {
 	};
 
 	for (var key in input) {
-		if (Object.keys(payload).indexOf(key) === -1) continue;
+		if (Object.keys(payload).indexOf(key) < 0) continue;
 		if (key === 'afk_channel_id') {
 			if (server.channels[input[key]] && server.channels[input[key]].type === 'voice') payload[key] = input[key];
 			continue;
@@ -567,7 +738,6 @@ DCP.editServerWidget = function(input, callback) {
 		});
 	});
 };
-//Response {channel_id: `Snowflake` OR `null`, enabled: `Boolean`}
 
 /**
  * [User Account] Add an emoji to a server
@@ -606,7 +776,7 @@ DCP.editServerEmoji = function(input, callback) {
 	this._req('patch', Endpoints.SERVER_EMOJIS(input.serverID, input.emojiID), payload, function(err, res) {
 		handleResCB("[editServerEmoji] Could not edit server emoji", err, res, callback);
 	});
-}
+};
 
 /**
  * [User Account] Remove an emoji from a server
@@ -618,7 +788,7 @@ DCP.deleteServerEmoji = function(input, callback) {
 	this._req('delete', Endpoints.SERVER_EMOJIS(input.serverID, input.emojiID), function(err, res) {
 		handleResCB("[deleteServerEmoji] Could not delete server emoji", err, res, callback);
 	});
-}
+};
 
 /**
  * Leave a server.
@@ -653,61 +823,31 @@ DCP.transferOwnership = function(input, callback) {
 };
 
 /**
- * Accept an invite to a server [User Only]
- * @arg {String} inviteCode - The code part of an invite URL (e.g. 0MvHMfHcTKVVmIGP)
+ * (Used to) Accept an invite to a server [User Only]. Can no longer be used.
+ * @deprecated
  */
-DCP.acceptInvite = function(inviteCode, callback) {
-	if (this.bot) return handleErrCB("[acceptInvite] This account is a 'bot' type account, and cannot use 'acceptInvite'. Please use the client's inviteURL property instead.", callback);
-	var client = this, joinedServers = Object.keys(client.servers);
-	this._req('post', Endpoints.INVITES(inviteCode), function(err, res) {
-		try {
-			//Try to create the server with the small amount of data
-			//that Discord provides directly from the HTTP response
-			//since the websocket event may take a second to show.
-			if (!client.servers[res.body.guild.id]) {
-				client.servers[res.body.guild.id] = res.body.guild;
-				client.servers[res.body.guild.id].channels = {};
-				client.servers[res.body.guild.id].channels[res.body.channel.id] = res.body.channel;
-			} else {
-				if (joinedServers.indexOf(res.body.guild.id) > -1) {
-					return handleErrCB(("Already joined server: " + res.body.guild.id), callback);
-				}
-			}
-		} catch(e) {}
-		handleResCB(("The invite code provided " + inviteCode + " is incorrect."), err, res, callback);
-	});
+DCP.acceptInvite = function(NUL, callback) {
+	return handleErrCB("acceptInvite can no longer be used", callback);
 };
 
 /**
  * Generate an invite URL for a channel.
  * @arg {Object} input
  * @arg {Snowflake} input.channelID
- * @arg {Number} [input.max_age] - Time in seconds.
- * @arg {Number} [input.max_users] - The amount of times the invite code can be used.
- * @arg {Boolean} [input.temporary] - Any users who use this invite will be removed when they disconnect, unless given a role.
+ * @arg {Number} input.max_age
+ * @arg {Number} input.max_uses
+ * @arg {Boolean} input.temporary
+ * @arg {Boolean} input.unique
  */
 DCP.createInvite = function(input, callback) {
-	var payload, client = this;
+	var allowed = ["channelID", "max_age", "max_uses", "temporary", "unique"];
+	var payload = {};
 
-	payload = {
-		max_age: 0,
-		max_users: 0,
-		temporary: false
-	};
+	allowed.forEach(function(name) {
+		if (input[name]) payload[name] = input[name];
+	});
 
-	if ( Object.keys(input).length === 1 && input.channelID ) {
-		payload = {
-			validate: client.internals.lastInviteCode || null
-		};
-	}
-
-	for (var key in input) {
-		if (Object.keys(payload).indexOf(key) === -1) continue;
-		payload[key] = input[key];
-	}
-
-	this._req('post', Endpoints.CHANNEL(input.channelID) + "/invites", payload, function(err, res) {
-		try {client.internals.lastInviteCode = res.body.code;} catch(e) {}
+	this._req('post', Endpoints.CHANNEL(payload.channelID) + "/invites", payload, function(err, res) {
 		handleResCB('Unable to create invite', err, res, callback);
 	});
 };
@@ -758,11 +898,13 @@ DCP.getChannelInvites = function(channelID, callback) {
  * @arg {Snowflake} input.serverID
  * @arg {String} input.name
  * @arg {String} [input.type] - 'text' or 'voice', defaults to 'text.
+ * @arg {Snowflake} [input.parentID]
  */
 DCP.createChannel = function(input, callback) {
 	var client = this, payload = {
 		name: input.name,
-		type: (['text', 'voice'].indexOf(input.type) === -1) ? 'text' : input.type
+		type: (['text', 'voice'].indexOf(input.type) < 0) ? 'text' : input.type,
+		parent_id: input.parentID
 	};
 
 	this._req('post', Endpoints.SERVERS(input.serverID) + "/channels", payload, function(err, res) {
@@ -783,7 +925,7 @@ DCP.createChannel = function(input, callback) {
 DCP.createDMChannel = function(userID, callback) {
 	var client = this;
 	this._req('post', Endpoints.USER(client.id) + "/channels", {recipient_id: userID}, function(err, res) {
-		if (!err && goodResponse(res)) client._uIDToDM[res.body.recipient.id] = res.body.id;
+		if (!err && goodResponse(res)) client._uIDToDM[res.body.recipients[0].id] = res.body.id;
 		handleResCB("Unable to create DM Channel", err, res, callback);
 	});
 };
@@ -801,6 +943,7 @@ DCP.deleteChannel = function(channelID, callback) {
 /**
  * Edit a channel's information.
  * @arg {Object} input
+ * @arg {Snowflake} input.channelID
  * @arg {String} [input.name]
  * @arg {String} [input.topic] - The topic of the channel.
  * @arg {Number} [input.bitrate] - [Voice Only] The bitrate for the channel.
@@ -817,14 +960,15 @@ DCP.editChannelInfo = function(input, callback) {
 			topic: channel.topic,
 			bitrate: channel.bitrate,
 			position: channel.position,
-			user_limit: channel.user_limit
+			user_limit: channel.user_limit,
+			parent_id: (input.parentID === undefined ? channel.parent_id : input.parentID)
 		};
 
 		for (var key in input) {
-			if (Object.keys(payload).indexOf(key) === -1) continue;
+			if (Object.keys(payload).indexOf(key) < 0) continue;
 			if (+input[key]) {
 				if (key === 'bitrate') {
-					payload.birate = Math.min( Math.max( input.bitrate, 8000), 96000);
+					payload.bitrate = Math.min( Math.max( input.bitrate, 8000), 96000);
 					continue;
 				}
 				if (key === 'user_limit') {
@@ -844,12 +988,12 @@ DCP.editChannelInfo = function(input, callback) {
 /**
  * Edit (or creates) a permission override for a channel.
  * @arg {Object} input
- * @arg {Snowflake} channelID
- * @arg {Snowflake} [userID]
- * @arg {Snowflake} [roleID]
- * @arg {Array<Number>} allow - An array of permissions to allow. Discord.Permissions.XXXXXX.
- * @arg {Array<Number>} deny - An array of permissions to deny, same as above.
- * @arg {Array<Number>} default - An array of permissions that cancels out allowed and denied permissions.
+ * @arg {Snowflake} input.channelID
+ * @arg {Snowflake} [input.userID]
+ * @arg {Snowflake} [input.roleID]
+ * @arg {Array<Number>} input.allow - An array of permissions to allow. Discord.Permissions.XXXXXX.
+ * @arg {Array<Number>} input.deny - An array of permissions to deny, same as above.
+ * @arg {Array<Number>} input.default - An array of permissions that cancels out allowed and denied permissions.
  */
 DCP.editChannelPermissions = function(input, callback) { //Will shrink this up later
 	var payload, pType, ID, channel, permissions, allowed_values;
@@ -861,7 +1005,7 @@ DCP.editChannelPermissions = function(input, callback) { //Will shrink this up l
 	ID = input[pType + "ID"];
 	channel = this.channels[ input.channelID ];
 	permissions = channel.permissions[pType][ID] || { allow: 0, deny: 0 };
-	allowed_values = [0, 4, 28].concat((channel.type === 'text' ?
+	allowed_values = [0, 4, 28].concat(((channel.type === 'text' || channel.type === 0) ?
 	[10, 11, 12, 13, 14, 15, 16, 17, 18] :
 	[20, 21, 22, 23, 24, 25] ));
 
@@ -893,7 +1037,7 @@ DCP.editChannelPermissions = function(input, callback) { //Will shrink this up l
 			permissions.deny = removePermission(perm, permissions.deny);
 		});
 	}
-	
+
 	payload = {
 		type: (pType === 'user' ? 'member' : 'role'),
 		id: ID,
@@ -909,9 +1053,9 @@ DCP.editChannelPermissions = function(input, callback) { //Will shrink this up l
 /**
  * Delete a permission override for a channel.
  * @arg {Object} input
- * @arg {Snowflake} channelID
- * @arg {Snowflake} [userID]
- * @arg {Snowflake} [roleID]
+ * @arg {Snowflake} input.channelID
+ * @arg {Snowflake} [input.userID]
+ * @arg {Snowflake} [input.roleID]
  */
 DCP.deleteChannelPermission = function(input, callback) {
 	var payload, pType, ID;
@@ -951,7 +1095,7 @@ DCP.createRole = function(serverID, callback) {
  * @arg {Snowflake} input.serverID
  * @arg {Snowflake} input.roleID - The ID of the role.
  * @arg {String} [input.name]
- * @arg {String} [input.color] - An HTML `#xxxxxx` color value, or a preset color value. Read the Colors doc.
+ * @arg {String} [input.color] - A color value as a number. Recommend using Hex numbers, as they can map to HTML colors (0xF35353 === #F35353).
  * @arg {Boolean} [input.hoist] - Separates the users in this role from the normal online users.
  * @arg {Object} [input.permissions] - An Object containing the permission as a key, and `true` or `false` as its value. Read the Permissions doc.
  * @arg {Boolean} [input.mentionable] - Toggles if users can @Mention this role.
@@ -970,7 +1114,7 @@ DCP.editRole = function(input, callback) {
 		};
 
 		for (var key in input) {
-			if (Object.keys(payload).indexOf(key) === -1) continue;
+			if (Object.keys(payload).indexOf(key) < 0) continue;
 			if (key === 'permissions') {
 				for (var perm in input[key]) {
 					role[perm] = input[key][perm];
@@ -981,6 +1125,7 @@ DCP.editRole = function(input, callback) {
 			if (key === 'color') {
 				if (String(input[key])[0] === '#') payload.color = parseInt(String(input[key]).replace('#', '0x'), 16);
 				if (Discord.Colors[input[key]]) payload.color = Discord.Colors[input[key]];
+				if (type(input[key]) === 'number') payload.color = input[key];
 				continue;
 			}
 			payload[key] = input[key];
@@ -1011,15 +1156,9 @@ DCP.deleteRole = function(input, callback) {
  * @arg {Snowflake} input.userID
  */
 DCP.addToRole = function(input, callback) {
-	var serverID = input.serverID, roleID = input.roleID, userID = input.userID, roles;
-	try {
-		roles = copy(this.servers[serverID].members[userID].roles);
-		if (roles.indexOf(roleID) > -1) return handleErrCB((userID + " already has the role " + roleID), callback);
-		roles.push(roleID);
-		this._req('patch', Endpoints.MEMBERS(serverID, userID), {roles: roles}, function(err, res) {
-			handleResCB("Could not add role", err, res, callback);
-		});
-	} catch(e) {return handleErrCB(('[addToRole]' + e), callback);}
+	this._req('put', Endpoints.MEMBER_ROLES(input.serverID, input.userID, input.roleID), function(err, res) {
+		handleResCB("Could not add role", err, res, callback);
+	});
 };
 
 /**
@@ -1030,15 +1169,9 @@ DCP.addToRole = function(input, callback) {
  * @arg {Snowflake} input.userID
  */
 DCP.removeFromRole = function(input, callback) {
-	var serverID = input.serverID, roleID = input.roleID, userID = input.userID, roles;
-	try {
-		roles = copy(this.servers[serverID].members[userID].roles);
-		if (roles.indexOf(roleID) === -1) return handleErrCB(("Role " + roleID + " not found for user " + userID), callback);
-		roles.splice(roles.indexOf(roleID), 1);
-		this._req('patch', Endpoints.MEMBERS(serverID, userID), {roles: roles}, function(err, res) {
-			handleResCB("Could not remove role", err, res, callback);
-		});
-	} catch(e) {return handleErrCB(e, callback);}
+	this._req('delete', Endpoints.MEMBER_ROLES(input.serverID, input.userID, input.roleID), function(err, res) {
+		handleResCB("Could not remove role", err, res, callback);
+	});
 };
 
 /**
@@ -1100,12 +1233,65 @@ DCP.getMembers = function(input, callback) {
 };
 
 /**
- * Get the ban list from a server.
+ * Get the ban list from a server
  * @arg {Snowflake} serverID
  */
 DCP.getBans = function(serverID, callback) {
 	this._req('get', Endpoints.BANS(serverID), function(err, res) {
 		handleResCB("Could not get ban list", err, res, callback);
+	});
+};
+
+/**
+ * Get all webhooks for a server
+ * @arg {Snowflake} serverID
+ */
+DCP.getServerWebhooks = function(serverID, callback) {
+	this._req('get', Endpoints.SERVER_WEBHOOKS(serverID), function(err, res) {
+		handleResCB("Could not get server Webhooks", err, res, callback);
+	});
+};
+
+/**
+ * Get webhooks from a channel
+ * @arg {Snowflake} channelID
+ */
+DCP.getChannelWebhooks = function(channelID, callback) {
+	this._req('get', Endpoints.CHANNEL_WEBHOOKS(channelID), function(err, res) {
+		handleResCB("Could not get channel Webhooks", err, res, callback);
+	});
+};
+
+/**
+ * Create a webhook for a server
+ * @arg {Snowflake} serverID
+ */
+DCP.createWebhook = function(serverID, callback) {
+	this._req('post', Endpoints.SERVER_WEBHOOKS(serverID), function(err, res) {
+		handleResCB("Could not create a Webhook", err, res, callback);
+	});
+};
+
+/**
+ * Edit a webhook
+ * @arg {Object} input
+ * @arg {Snowflake} input.webhookID - The Webhook's ID
+ * @arg {String} [input.name]
+ * @arg {String<Base64>} [input.avatar]
+ * @arg {String} [input.channelID]
+ */
+DCP.editWebhook = function(input, callback) {
+	var client = this, payload = {}, allowed = ['avatar', 'name'];
+	this._req('get', Endpoints.WEBHOOKS(input.webhookID), function(err, res) {
+		if (err || !goodResponse(res)) return handleResCB("Couldn't get webhook, do you have permissions to access it?", err, res, callback);
+		allowed.forEach(function(key) {
+			payload[key] = (key in input ? input[key] : res.body[key]);
+		});
+		payload.channel_id = input.channelID || res.body.channel_id;
+
+		client._req('patch', Endpoints.WEBHOOKS(input.webhookID), payload, function(err, res) {
+			return handleResCB("Couldn't update webhook", err, res, callback);
+		});
 	});
 };
 
@@ -1116,34 +1302,21 @@ DCP.getBans = function(serverID, callback) {
  * @arg {Snowflake} channelID
  */
 DCP.joinVoiceChannel = function(channelID, callback) {
-	var serverID, init, handler;
-	try {serverID = this.channels[channelID].guild_id;} catch(e) {}
+	var serverID, server, channel, voiceSession;
+	try {
+		serverID = this.channels[channelID].guild_id;
+		server = this.servers[serverID];
+		channel = server.channels[channelID];
+	} catch(e) {}
 	if (!serverID) return handleErrCB(("Cannot find the server related to the channel provided: " + channelID), callback);
-	if (this.servers[serverID].channels[channelID].type !== 'voice') return handleErrCB(("Selected channel is not a voice channel: " + channelID), callback);
+	if (channel.type !== 'voice' && channel.type !== 2) return handleErrCB(("Selected channel is not a voice channel: " + channelID), callback);
 	if (this._vChannels[channelID]) return handleErrCB(("Voice channel already active: " + channelID), callback);
 
-	init = {
-		op: 4,
-		d: {
-			guild_id: serverID,
-			channel_id: channelID,
-			self_mute: false,
-			self_deaf: false
-		}
-	};
-	this._vChannels[channelID] = {
-		serverID: serverID,
-		channelID: channelID,
-		token: null,
-		session: null,
-		endpoint: null,
-		callback: callback,
-	};
-	handler = handleWSVoiceMessage.bind(this, this._vChannels[channelID]);
-	this._vChannels[channelID].handler = handler;
-
-	this._ws.on('message', handler);
-	send(this._ws, init);
+	voiceSession = getVoiceSession(this, channelID, server);
+	voiceSession.self_mute = server.self_mute;
+	voiceSession.self_deaf = server.self_deaf;
+	checkVoiceReady(voiceSession, callback);
+	return send(this._ws, Payloads.UPDATE_VOICE(serverID, channelID, server.self_mute, server.self_deaf));
 };
 
 /**
@@ -1164,7 +1337,6 @@ DCP.leaveVoiceChannel = function(channelID, callback) {
 DCP.getAudioContext = function(channelObj, callback) {
 	// #q/qeled gave a proper timing solution. Credit where it's due.
 	if (!isNode) return handleErrCB("Using audio in the browser is currently not supported.", callback);
-	if (!Opus) Opus = require('cjopus');
 	var channelID = channelObj.channelID || channelObj, voiceSession = this._vChannels[channelID], encoder = chooseAudioEncoder(['ffmpeg', 'avconv']);
 
 	if (!voiceSession) return handleErrCB(("You have not joined the voice channel: " + channelID), callback);
@@ -1195,26 +1367,27 @@ DCP.getAllUsers = function(callback) {
 		this.emit('allUsers');
 		return handleErrCB("There are no users to be collected", callback);
 	}
-	if (!this.bot) send(this._ws, { op: 12, d: Object.keys(this.servers) } );
+	if (!this.bot) send(this._ws, Payloads.ALL_USERS(this));
 
 	return getOfflineUsers(this, servers, callback);
 };
 
 /* --- Functions --- */
 function handleErrCB(err, callback) {
+	if (!err) return false;
 	return call(callback, [new Error(err)]);
 }
 function handleResCB(errMessage, err, res, callback) {
 	if (typeof(callback) !== 'function') return;
 	res = res || {};
-	if (!err && goodResponse(res)) return callback(null, res.body);
+	if (!err && goodResponse(res)) return (callback(null, res.body), true);
 
 	var e = new Error( err || errMessage );
 	e.name = "ResponseError";
 	e.statusCode = res.statusCode;
 	e.statusMessage = res.statusMessage;
 	e.response = res.body;
-	return callback(e);
+	return (callback(e), false);
 }
 function goodResponse(response) {
 	return (response.statusCode / 100 | 0) === 2;
@@ -1234,18 +1407,20 @@ function sendMessage(client, to, message, callback) {
 }
 function cacheMessage(cache, limit, channelID, message) {
 	if (!cache[channelID]) cache[channelID] = {};
-	if (limit === null) return void(cache[channelID][message.id] = message);
+	if (limit === -1) return void(cache[channelID][message.id] = message);
 	var k = Object.keys(cache[channelID]);
 	if (k.length > limit) delete(cache[channelID][k[0]]);
 	cache[channelID][message.id] = message;
 }
-function generateMessage(message) {
+function generateMessage(message, embed) {
 	return {
+		type: 0,
 		content: String(message),
 		nonce: Math.floor(Math.random() * Number.MAX_SAFE_INTEGER),
+		embed: embed || {}
 	};
 }
-function messageHeaders() {
+function messageHeaders(client) {
 	var r = {
 		"accept": "*/*",
 		"accept-language": "en-US;q=0.8",
@@ -1256,29 +1431,35 @@ function messageHeaders() {
 		r.dnt = 1;
 	}
 	try {
-		r.authorization = (this.bot ? "Bot " : "") + this.internals.token;
+		r.authorization = (client.bot ? "Bot " : "") + client.internals.token;
 	} catch(e) {}
 	return r;
 }
 function simulateTyping(client, to, message, time, callback) {
 	if (time <= 0) return sendMessage(client, to, message, callback);
-	if (time > 5000) time = time - 5000; else time = time - time;
 
 	client.simulateTyping(to, function() {
-		setTimeout(simulateTyping, time, client, to, message, time, callback);
+		setTimeout(simulateTyping, Math.min(time, 5000), client, to, message, time - 5000, callback);
 	});
+}
+function stringifyEmoji(emoji) {
+	if (typeof emoji === 'object') // if (emoji.name && emoji.id)
+		return emoji.name + ':' + emoji.id;
+	if (emoji.indexOf(':') > -1)
+		return emoji;
+	return encodeURIComponent(decodeURIComponent(emoji));
 }
 
 /* - Functions - Utils */
 function APIRequest(method, url) {
-	var data, callback, opts, req, headers = messageHeaders.call(this);
+	var data, callback, opts, req, headers = messageHeaders(this);
 	callback = ( typeof(arguments[2]) === 'function' ? arguments[2] : (data = arguments[2], arguments[3]) );
-	
+
 	if (isNode) {
 		opts = URL.parse(url);
 		opts.method = method;
 		opts.headers = headers;
-	
+
 		req = requesters[opts.protocol.slice(0, -1)].request(opts, function(res) {
 			var chunks = [];
 			res.on('data', function(c) { chunks[chunks.length] = c; });
@@ -1295,10 +1476,10 @@ function APIRequest(method, url) {
 		if (data instanceof Multipart) req.setHeader("Content-Type", "multipart/form-data; boundary=" + data.boundary);
 		if (data) req.write( data.result || JSON.stringify(data), data.result ? 'binary' : 'utf-8' );
 		req.end();
-		
+
 		return req.once('error', function(e) { return callback(e.message); });
 	}
-	
+
 	req = new XMLHttpRequest();
 	req.open(method.toUpperCase(), url, true);
 	for (var key in headers) {
@@ -1314,13 +1495,11 @@ function APIRequest(method, url) {
 	};
 	if (type(data) === 'object' || method.toLowerCase() === 'get') req.setRequestHeader("Content-Type", "application/json; charset=utf-8");
 	if (data instanceof Multipart) req.setRequestHeader("Content-Type", "multipart/form-data; boundary=" + data.boundary);
-	if (data) return req[ (data.result ? "sendAsBinary" : "send") ]( data.result ? data.result : JSON.stringify(data) );
+	if (data) return req.send( data.result ? data.result : JSON.stringify(data) );
 	req.send(null);
 }
 function send(ws, data) {
-	if (ws && ws.readyState == 1) {
-		ws.send(JSON.stringify(data));
-	}
+	if (ws && ws.readyState == 1) ws.send(JSON.stringify(data));
 }
 function copy(obj) {
 	try {
@@ -1348,7 +1527,7 @@ function type(v) {
 }
 function call(f, a) {
 	if (typeof(f) != 'function') return;
-	return f.apply(this, a);
+	return f.apply(null, a);
 }
 function qstringify(obj) {
 	//.map + .join is 7x slower!
@@ -1396,6 +1575,24 @@ function removeAllListeners(emitter, type) {
 		}
 	}
 }
+function colorFromRole(server, member) {
+	return member.roles.reduce(function(array, ID) {
+		var role = server.roles[ID];
+		if (!role) return array;
+		return role.position > array[0] && role.color ? [role.position, role.color] : array;
+	}, [-1, null])[1];
+}
+function log(client, level_message) {
+	var level, message;
+	if (arguments.length === 2) {
+		level = Discord.LogLevels.Info;
+		message = level_message;
+	} else {
+		level = level_message;
+		message = arguments[2];
+	}
+	return client.emit('log', level, message);
+}
 
 function givePermission(bit, permissions) {
 	return permissions | (1 << bit);
@@ -1439,7 +1636,7 @@ function resolveID(client, ID, callback) {
 
 	//If the ID isn't in the UserID : ChannelID cache, let's try seeing if it belongs to a user.
 	if (client.users[ID]) return client.createDMChannel(ID, function(err, res) {
-		if (err) return console.log("Internal ID resolver error: " + err);
+		if (err) return console.log("Internal ID resolver error: " + JSON.stringify(err));
 		callback(res.id);
 	});
 
@@ -1462,93 +1659,143 @@ function init(client, opts) {
 	};
 	client._connecting = true;
 
-	getToken(client, opts);
+	setupPing(client.internals);
+	return getToken(client, opts);
 }
 function getToken(client, opts) {
-	if (opts.token) return getGateway(client, opts, opts.token);
+	if (opts.token) return getGateway(client, opts.token);
 	if (!isNode) {
 		//Read from localStorage? Sounds like a bad idea, but I'll leave this here.
 	}
 }
-function getGateway(client, opts, token) {
+function getGateway(client, token) {
 	client.internals.token = token;
 
-	APIRequest('get', Endpoints.GATEWAY, function (err, res) {
+	return APIRequest('get', Endpoints.GATEWAY, function (err, res) {
 		if (err || !goodResponse(res)) {
 			client._connecting = false;
 			return client.emit("disconnect", "Error GETing gateway:\n" + stringifyError(res), 0);
 		}
-		startConnection(client, opts, (res.body.url + "/?encoding=json&v=" + GATEWAY_VERSION));
+		return startConnection(client, (res.body.url + "/?encoding=json&v=" + GATEWAY_VERSION));
 	});
 }
-function startConnection(client, opts, gateway) {
+function startConnection(client, gateway) {
 	client._ws = new Websocket(gateway);
 	client.internals.gatewayUrl = gateway;
-	client.presenceStatus = 'online';
-	client.connected = true;
 
-	client._ws.once('open', handleWSOpen.bind(client, opts));
 	client._ws.once('close', handleWSClose.bind(client));
 	client._ws.once('error', handleWSClose.bind(client));
-	client._ws.on('message', handleWSMessage.bind(client, opts));
+	client._ws.on('message', handleWSMessage.bind(client));
 }
 function getOfflineUsers(client, servArr, callback) {
 	if (!servArr[0]) return call(callback);
-	
-	send(client._ws, {
-				op: 8,
-				d: {
-					guild_id: servArr.splice(0, 50),
-					query: "",
-					limit: 0
-				}
-			}
-	);
-	setTimeout( getOfflineUsers, 0, client, servArr, callback );
+
+	send(client._ws, Payloads.OFFLINE_USERS(servArr));
+	return setTimeout( getOfflineUsers, 0, client, servArr, callback );
+}
+function checkForAllServers(client, ready, message) {
+	var all = Object.keys(client.servers).every(function(s) {
+		return !client.servers[s].unavailable;
+	});
+	if (all || ready[0]) return void(client._ready = true && client.emit('ready', message));
+	return setTimeout(checkForAllServers, 0, client, ready, message);
+}
+function setupPing(obj) {
+	applyProperties(obj, [
+		["_pings", []],
+		["_lastHB", 0]
+	]);
+	Object.defineProperty(obj, 'ping', {
+		get: function() {
+			return ((obj._pings.reduce(function(p, c) { return p + c; }, 0) / obj._pings.length) || 0) | 0;
+		},
+		set: function() {}
+	});
+}
+function validateShard(shard) {
+	return (
+		type(shard)  === 'array' &&
+		shard.length === 2       &&
+		shard[0] <= shard[1]     &&
+		shard[1] > 1
+	) ? shard : null;
+}
+function identifyOrResume(client) {
+	var payload, internals = client.internals;
+
+	if (internals.sequence && internals.token && internals.sessionID) {
+		payload = Payloads.RESUME(client);
+	} else {
+		payload = Payloads.IDENTIFY(client);
+		if (client._shard) payload.d.shard = client._shard;
+	}
+	client._connecting = false;
+
+	return send(client._ws, payload);
 }
 
 /* - Functions - Websocket Handling - */
-function handleWSOpen(opts) {
-	var ident = {
-		"op":2,
-		"d": {
-			"token": this.internals.token,
-			"v": GATEWAY_VERSION,
-			"compress": isNode && !!Zlib.inflateSync,
-			"large_threshold": LARGE_THRESHOLD,
-			"properties": {
-				"$os": isNode ? require('os').platform() : navigator.platform,
-				"$browser":"discord.io",
-				"$device":"discord.io",
-				"$referrer":"",
-				"$referring_domain":""
-			},
-		}
-	};
-	this._connecting = false;
-	if (type(opts.shard) === 'array'   &&
-		opts.shard.length === 2        &&
-		opts.shard[0] <= opts.shard[1] &&
-		opts.shard[1] > 1
-	) ident.d.shard = opts.shard;
-	
-	send(this._ws, ident);
-}
-function handleWSMessage(opts, data, flags) {
+function handleWSMessage(data, flags) {
 	var message = decompressWSMessage(data, flags);
 	var _data = message.d;
-	var client = this, userItem, chItem, key, old, members, member, user, userID, serverID;
-	try {
-		client.internals.sequence = message.s;
-	} catch(e) {}
+	var client = this, user, server, member, old,
+	userID, serverID, channelID, currentVCID,
+	mute, deaf, self_mute, self_deaf;
 
-	if (message.op === 10) {
-		//Start keep-alive interval
-		client._mainKeepAlive = setInterval( send, _data.heartbeat_interval, client._ws, {op: 1, d: client.internals.sequence} );
+	switch (message.op) {
+		case 0:
+			//Event dispatched - update our sequence number
+			client.internals.sequence = message.s;
+			break;
+		case 1:
+			//Heartbeat requested by Discord - send one immediately
+			send(client._ws, Payloads.HEARTBEAT(client));
+			break;
+		case 7:
+			//Reconnect requested by discord
+			clearTimeout(client.internals.heartbeat);
+			client._ws.close(1000, 'Reconnect requested by Discord');
+			break;
+		case 9:
+			//Disconnect after an Invalid Session
+			//Disconnect the client if the client has received an invalid session id
+			if(!message.d) {
+				delete(client.internals.sequence);
+				delete(client.internals.sessionID);
+				//Send new identify after 1-5 seconds, chosen randomly (per Gateway docs)
+				setTimeout(function() {
+					identifyOrResume(client);
+				}, Math.random()*4000+1000);
+			} else identifyOrResume(client);
+			
+			
+			break;
+		case 10:
+			//Start keep-alive interval
+			//Disconnect the client if no ping has been received
+			//Since v3 you send the IDENTIFY/RESUME payload here.
+			identifyOrResume(client);
+			if(!client.presence) client.presence = { status: "online", since: Date.now() };
+			client.connected = true;
+
+			client._mainKeepAlive = setInterval(function() {
+				client.internals.heartbeat = setTimeout(function() {
+					client._ws && client._ws.close(1001, "No heartbeat received");
+				}, _data.heartbeat_interval);
+				client.internals._lastHB = Date.now();
+				send(client._ws, Payloads.HEARTBEAT(client));
+			}, _data.heartbeat_interval);
+			break;
+		case 11:
+			clearTimeout(client.internals.heartbeat);
+			client.internals._pings.unshift(Date.now() - client.internals._lastHB);
+			client.internals._pings = client.internals._pings.slice(0, 10);
+			break;
 	}
 
 	//Events
 	client.emit('any', message);
+	//TODO: Remove in v3
 	client.emit('debug', message);
 	switch (message.t) {
 		case "READY":
@@ -1558,8 +1805,7 @@ function handleWSMessage(opts, data, flags) {
 			getServerInfo(client, _data.guilds);
 			getDirectMessages(client, _data.private_channels);
 
-			client.getOauthInfo(function(err, res) {
-				if (!client.bot) return;
+			if (client.bot) client.getOauthInfo(function(err, res) {
 				if (err) return console.log(err);
 				client.internals.oauth = res;
 				client.inviteURL = "https://discordapp.com/oauth2/authorize?client_id=" + res.id + "&scope=bot";
@@ -1568,27 +1814,12 @@ function handleWSMessage(opts, data, flags) {
 				if (err) return console.log(err);
 				client.internals.settings = res;
 			});
-			
-			return (function() {
-				var ready = false;
-				var t = setTimeout(function() {
-					ready = true;
-					client.emit('ready', message);
-				}, 3500);
-				checkForAllServers();
 
-				function checkForAllServers() {
-					if (ready) return;
-					if (
-						Object.keys(client.servers).every(function(s) {
-							return !client.servers[s].unavailable;
-						})
-					) {
-						clearTimeout(t);
-						return client.emit('ready', message);
-					}
-					setTimeout(checkForAllServers, 0);
-				}
+			return (function() {
+				if (client._ready) return;
+				var ready = [false];
+				setTimeout(function() { ready[0] = true; }, 3500);
+				checkForAllServers(client, ready, message);
 			})();
 		case "MESSAGE_CREATE":
 			client.emit('message', _data.author.username, _data.author.id, _data.channel_id, _data.content, message);
@@ -1605,32 +1836,22 @@ function handleWSMessage(opts, data, flags) {
 			serverID = _data.guild_id;
 			userID = _data.user.id;
 
-			if (!client.users[userID]) { client.users[userID] = {}; }
-			if (!client.servers[serverID].members[userID]) { client.servers[serverID].members[userID] = {}; }
+			if (!client.users[userID]) client.users[userID] = new User(_data.user);
 
 			user = client.users[userID];
-			member = client.servers[serverID].members[userID];
+			member = client.servers[serverID].members[userID] || {};
 
-			for (key in _data.user) {
-				user[key] = _data.user[key];
-			}
+			copyKeys(_data.user, user);
 			user.game = _data.game;
 
-			for (key in _data) {
-				if (['user', 'guild_id', 'game'].indexOf(key) > -1) continue;
-				member[key] = _data[key];
-			}
+			copyKeys(_data, member, ['user', 'guild_id', 'game']);
 			client.emit('presence', user.username, user.id, member.status, user.game, message);
 			break;
 		case "USER_UPDATE":
-			for (userItem in _data) {
-				client[userItem] = _data[userItem];
-			}
+			copyKeys(_data, client);
 			break;
 		case "USER_SETTINGS_UPDATE":
-			for (userItem in _data) {
-				client.internals[userItem] = _data[userItem];
-			}
+			copyKeys(_data, client.internals);
 			break;
 		case "GUILD_CREATE":
 			/*The lib will attempt to create the server using the response from the
@@ -1649,12 +1870,12 @@ function handleWSMessage(opts, data, flags) {
 			return delete(client.servers[_data.id]);
 		case "GUILD_MEMBER_ADD":
 			client.users[_data.user.id] = new User(_data.user);
-			client.servers[_data.guild_id].members[_data.user.id] = new Member(client, _data);
+			client.servers[_data.guild_id].members[_data.user.id] = new Member(client, client.servers[_data.guild_id], _data);
 			client.servers[_data.guild_id].member_count += 1;
 			return emit(client, message, client.servers[_data.guild_id].members[_data.user.id]);
 		case "GUILD_MEMBER_UPDATE":
 			old = copy(client.servers[_data.guild_id].members[_data.user.id]);
-			Member.update(client.servers[_data.guild_id], _data);
+			Member.update(client, client.servers[_data.guild_id], _data);
 			return emit(client, message, old, client.servers[_data.guild_id].members[_data.user.id]);
 		case "GUILD_MEMBER_REMOVE":
 			if (_data.user && _data.user.id === client.id) return;
@@ -1665,16 +1886,25 @@ function handleWSMessage(opts, data, flags) {
 			client.servers[_data.guild_id].roles[_data.role.id] = new Role(_data.role);
 			return emit(client, message, client.servers[_data.guild_id].roles[_data.role.id]);
 		case "GUILD_ROLE_UPDATE":
-			old = copy(client.servers[_data.guild_id].roles[_data.role.id]);
-			Role.update(client.servers[_data.guild_id], _data);
-			return emit(client, message, old, client.servers[_data.guild_id].roles[_data.role.id]);
+			server = client.servers[_data.guild_id];
+			old = copy(server.roles[_data.role.id]);
+			Role.update(server, _data);
+			Object.keys(server.members).forEach(function(memberID) {
+				var member = server.members[memberID];
+				if ( member.roles.indexOf(_data.role.id) < 0 ) return;
+				member.color = colorFromRole(server, member);
+			});
+			return emit(client, message, old, server.roles[_data.role.id]);
 		case "GUILD_ROLE_DELETE":
-			emit(client, message, client.servers[_data.guild_id].roles[_data.role_id]);
-			return delete(client.servers[_data.guild_id].roles[_data.role_id]);
+			if (client.servers[_data.guild_id]){
+				emit(client, message, client.servers[_data.guild_id].roles[_data.role_id]);
+				return delete(client.servers[_data.guild_id].roles[_data.role_id]);
+			}
+			break;
 		case "CHANNEL_CREATE":
-			var channelID = _data.id;
+			channelID = _data.id;
 
-			if (_data.is_private) {
+			if (_data.type == 1) {
 				if (client.directMessages[channelID]) return;
 				client.directMessages[channelID] = new DMChannel(client._uIDToDM, _data);
 				return emit(client, message, client.directMessages[channelID]);
@@ -1688,11 +1918,16 @@ function handleWSMessage(opts, data, flags) {
 			Channel.update(client, _data);
 			return emit(client, message, old, client.channels[_data.id]);
 		case "CHANNEL_DELETE":
-			if (_data.is_private === true) {
+			if (_data.type == 1) {
 				emit(client, message, client.directMessages[_data.id]);
 				delete(client.directMessages[_data.id]);
-				return delete(client._uIDToDM[_data.recipient.id]);
+				return delete(client._uIDToDM[_data.recipients[0].id]);
 			}
+			Object.keys(client.servers[_data.guild_id].members).forEach(function(m) {
+				if (client.servers[_data.guild_id].members[m].voice_channel_id == _data.id) {
+					client.servers[_data.guild_id].members[m].voice_channel_id = null;
+				}
+			});
 			emit(client, message, client.servers[_data.guild_id].channels[_data.id]);
 			delete(client.servers[_data.guild_id].channels[_data.id]);
 			return delete(client.channels[_data.id]);
@@ -1701,28 +1936,63 @@ function handleWSMessage(opts, data, flags) {
 			Emoji.update(client.servers[_data.guild_id], _data.emojis);
 			return emit(client, message, old, client.servers[_data.guild_id].emojis);
 		case "VOICE_STATE_UPDATE":
-			var vcid;
+			serverID = _data.guild_id;
+			channelID = _data.channel_id;
+			userID = _data.user_id;
+			server = client.servers[serverID];
+			mute = !!_data.mute;
+			self_mute = !!_data.self_mute;
+			deaf = !!_data.deaf;
+			self_deaf = !!_data.self_deaf;
+
 			try {
-				vcid = client.servers[_data.guild_id].members[_data.user_id].voice_channel_id;
-				if (vcid)
-					delete(client.servers[_data.guild_id].channels[vcid].members[_data.user_id]);
-				if (_data.channel_id)
-					client.servers[_data.guild_id].channels[_data.channel_id].members[_data.user_id] = _data;
-					//These are supposed to be separate
-					client.servers[_data.guild_id].members[_data.user_id].voice_channel_id = _data.channel_id;
+				currentVCID = server.members[userID].voice_channel_id;
+				if (currentVCID) delete( server.channels[currentVCID].members[userID] );
+				if (channelID) server.channels[channelID].members[userID] = _data;
+				server.members[userID].mute = (mute || self_mute);
+				server.members[userID].deaf = (deaf || self_deaf);
+				server.members[userID].voice_channel_id = channelID;
 			} catch(e) {}
+
+			if (userID === client.id) {
+				server.self_mute = self_mute;
+				server.self_deaf = self_deaf;
+				if (channelID === null) {
+					if (server.voiceSession) leaveVoiceChannel(client, server.voiceSession.channelID);
+					server.voiceSession = null;
+				} else {
+					if (!server.voiceSession) {
+						server.voiceSession = getVoiceSession(client, channelID, server);
+					}
+					if (channelID !== server.voiceSession.channelID) {
+						delete( client._vChannels[server.voiceSession.channelID] );
+						getVoiceSession(client, channelID, server).channelID = channelID;
+					}
+
+					server.voiceSession.session = _data.session_id;
+					server.voiceSession.self_mute = self_mute;
+					server.voiceSession.self_deaf = self_deaf;
+				}
+			}
+			break;
+		case "VOICE_SERVER_UPDATE":
+			serverID = _data.guild_id;
+			server = client.servers[serverID];
+			server.voiceSession.token = _data.token;
+			server.voiceSession.severID = serverID;
+			server.voiceSession.endpoint = _data.endpoint;
+			joinVoiceChannel(client, server.voiceSession);
 			break;
 		case "GUILD_MEMBERS_CHUNK":
-			members = _data.members;
 			serverID = _data.guild_id;
 			if (!client.servers[serverID].members) client.servers[serverID].members = {};
 
-			members.forEach(function(user) {
-				if (client.servers[serverID].members[user.user.id]) return;
-				if (!client.users[user.user.id]) {
-					client.users[user.user.id] = new User(user.user);
-				}
-				client.servers[serverID].members[user.user.id] = new Member(client, user);
+			_data.members.forEach(function(member) {
+				var uID = member.user.id;
+				var members = client.servers[serverID].members;
+				if (members[uID]) return;
+				if (!client.users[uID]) client.users[uID] = new User(member.user);
+				members[uID] = new Member(client, client.servers[serverID], member);
 			});
 			var all = Object.keys(client.servers).every(function(server) {
 				server = client.servers[server];
@@ -1732,17 +2002,19 @@ function handleWSMessage(opts, data, flags) {
 			if (all) return client.emit("allUsers");
 			break;
 		case "GUILD_SYNC":
-			for (var gsm=0; gsm<_data.members.length; gsm++) {
-				if (!client.users[_data.members[gsm].user.id]) {
-					client.users[_data.members[gsm].user.id] = new User(_data.members[gsm].user);
-				}
-				client.servers[_data.id].members[ _data.members[gsm].user.id ] = new Member(client, _data.members[gsm]);
-			}
-			for (var gsp=0; gsp<_data.presences.length; gsp++) {
-				var uID = _data.presences[gsp].user.id;
-				delete(_data.presences[gsp].user);
-				copyKeys(_data.presences[gsp], client.servers[_data.id].members[ uID ]); 
-			}
+			_data.members.forEach(function(member) {
+				var uID = member.user.id;
+				if (!client.users[uID]) client.users[uID] = new User(member.user);
+				client.servers[_data.id].members[uID] = new Member(client, client.servers[_data.id], member);
+			});
+
+			_data.presences.forEach(function(presence) {
+				var uID = presence.user.id;
+				var members = client.servers[_data.id].members;
+				if (!members[uID]) return void(new User(presence.user));
+				delete(presence.user);
+				copyKeys(presence, members[uID]);
+			});
 			client.servers[_data.id].large = _data.large;
 			break;
 	}
@@ -1750,38 +2022,42 @@ function handleWSMessage(opts, data, flags) {
 }
 function handleWSClose(code, data) {
 	var client = this;
-	var eMsg = Discord.Codes.WebSocket[code];
-	
+	var eMsg = Discord.Codes.WebSocket[code] || data;
+
 	clearInterval(client._mainKeepAlive);
 	client.connected = false;
-	client.presenceStatus = "offline";
-	
 	removeAllListeners(client._ws, 'message');
+
+	if ([1001, 1006].indexOf(code) > -1) return getGateway(client, client.internals.token);
+
+	client._ready = false;
 	client._ws = null;
-	
+
 	client.emit("disconnect", eMsg, code);
 }
 
 /* - Functions - Voice - */
 function joinVoiceChannel(client, voiceSession) {
 	var vWS, vUDP, endpoint = voiceSession.endpoint.split(":")[0];
-	handleVoiceChannelChange(client, voiceSession);
+	//handleVoiceChannelChange(client, voiceSession);
 
 	voiceSession.ws = {};
 	voiceSession.udp = {};
 	voiceSession.members = {};
+	voiceSession.error = null;
 	voiceSession.ready = false;
+	voiceSession.joined = false;
 	voiceSession.translator = {};
 	voiceSession.wsKeepAlive = null;
 	voiceSession.udpKeepAlive = null;
 	voiceSession.keepAlivePackets = 0;
 	voiceSession.emitter = new Emitter();
-	voiceSession.keepAliveBuffer = new Buffer(8).fill(0);
+	if (isNode) voiceSession.keepAliveBuffer = new Buffer(8).fill(0);
 	vWS = voiceSession.ws.connection = new Websocket("wss://" + endpoint);
 
 	if (isNode) return DNS.lookup(endpoint, function(err, address) {
-		if (err) return handleErrCB(err, voiceSession.callback);
-		
+		if (err) return void(voiceSession.error = err);
+
 		voiceSession.address = address;
 		vUDP = voiceSession.udp.connection = UDP.createSocket("udp4");
 
@@ -1796,7 +2072,7 @@ function joinVoiceChannel(client, voiceSession) {
 	vWS.once('open',  handlevWSOpen.bind(client, voiceSession));
 	vWS.on('message', handlevWSMessage.bind(client, voiceSession));
 	vWS.once('close', handlevWSClose.bind(client, voiceSession));
-	return call(voiceSession.callback, [null, voiceSession.emitter]);
+	return void(voiceSession.joined = true);
 }
 
 function leaveVoiceChannel(client, channelID, callback) {
@@ -1806,70 +2082,58 @@ function leaveVoiceChannel(client, channelID, callback) {
 		client._vChannels[channelID].ws.connection.close();
 		client._vChannels[channelID].udp.connection.close();
 	} catch(e) {}
-	send(client._ws, {
-		op:4,
-		d: {
-			guild_id: client.channels[channelID].guild_id,
-			channel_id: null,
-			self_mute: false,
-			self_deaf: false
-		}
-	});
-	delete(client._vChannels[channelID]);
+
+	send(client._ws, Payloads.UPDATE_VOICE(client.channels[channelID].guild_id, null, false, false));
 
 	return call(callback, [null]);
 }
 
 function keepUDPAlive(VS) {
-    if (!VS.keepAliveBuffer) return;
+	if (!VS.keepAliveBuffer) return;
 
-    if (VS.keepAlivePackets > 4294967294) {
-        VS.keepAlivePackets = 0;
-        VS.keepAliveBuffer.fill(0);
-    }
-    VS.keepAliveBuffer.writeUIntLE(++VS.keepAlivePackets, 0, 6);
-    try {
-        return VS.udp.connection.send(VS.keepAliveBuffer, 0, VS.keepAliveBuffer.length, VS.ws.port, VS.address);
-    } catch(e) {}
+	if (VS.keepAlivePackets > 4294967294) {
+		VS.keepAlivePackets = 0;
+		VS.keepAliveBuffer.fill(0);
+	}
+	VS.keepAliveBuffer.writeUIntLE(++VS.keepAlivePackets, 0, 6);
+	try {
+		return VS.udp.connection.send(VS.keepAliveBuffer, 0, VS.keepAliveBuffer.length, VS.ws.port, VS.address);
+	} catch(e) {}
+}
+
+function getVoiceSession(client, channelID, server) {
+	if (!channelID) return null;
+	return client._vChannels[channelID] ?
+		client._vChannels[channelID] :
+		client._vChannels[channelID] = (server && server.voiceSession) || {
+			serverID: (server && server.id) || null,
+			channelID: channelID,
+			token: null,
+			session: null,
+			endpoint: null,
+			self_mute: false,
+			self_deaf: false
+		};
+}
+
+function checkVoiceReady(voiceSession, callback) {
+	return setTimeout(function() {
+		if (voiceSession.error) return call(callback, [voiceSession.error]);
+		if (voiceSession.joined) return call(callback, [null, voiceSession.emitter]);
+		return checkVoiceReady(voiceSession, callback);
+	}, 1);
 }
 
 /* - Functions - Voice - Handling - */
-function handleWSVoiceMessage(voiceSession, data, flags) {
-	data = decompressWSMessage(data, flags);
-
-	if (data.t === "VOICE_STATE_UPDATE") {
-		if (data.d.user_id !== this.id || data.d.channel_id === null) return;
-		voiceSession.session = data.d.session_id;
-	} else if (data.t === "VOICE_SERVER_UPDATE") {
-		voiceSession.token = data.d.token;
-		voiceSession.serverID = data.d.guild_id;
-		voiceSession.endpoint = data.d.endpoint;
-
-		joinVoiceChannel(this, voiceSession);
-		this._ws.removeListener('message', voiceSession.handler);
-		delete(voiceSession.handler);
-	}
-}
 
 function handlevWSOpen(voiceSession) {
-	send(voiceSession.ws.connection, {
-		op: 0,
-		d: {
-			server_id: voiceSession.serverID,
-			user_id: this.id,
-			session_id: voiceSession.session,
-			token: voiceSession.token
-		}
-	});
+	return send(voiceSession.ws.connection, Payloads.VOICE_IDENTIFY(this.id, voiceSession));
 }
 function handlevWSMessage(voiceSession, vMessage, vFlags) {
-	var client = this, vData = decompressWSMessage(vMessage, vFlags), callback = voiceSession.callback;
+	var client = this, vData = decompressWSMessage(vMessage, vFlags);
 	switch (vData.op) {
 		case 2: //Ready (Actually means you're READY to initiate the UDP connection)
-			for (var vKey in vData.d) {
-				voiceSession.ws[vKey] = vData.d[vKey];
-			}
-
+			copyKeys(vData.d, voiceSession.ws);
 			voiceSession.wsKeepAlive = setInterval(send, vData.d.heartbeat_interval, voiceSession.ws.connection, { "op": 3, "d": null });
 
 			if (!isNode) return;
@@ -1886,9 +2150,8 @@ function handlevWSMessage(voiceSession, vMessage, vFlags) {
 		case 4: //Session Discription (Actually means you're ready to send audio... stupid Discord Devs :I)
 			voiceSession.selectedMode = vData.d.mode;
 			voiceSession.secretKey = vData.d.secret_key;
+			voiceSession.joined = true;
 			voiceSession.ready = true;
-			call(callback, [null, voiceSession.emitter]);
-			delete(voiceSession.callback);
 			break;
 		case 5: //Speaking (At least this isn't confusing!)
 			voiceSession.emitter.emit('speaking', vData.d.user_id, vData.d.ssrc, vData.d.speaking);
@@ -1896,13 +2159,29 @@ function handlevWSMessage(voiceSession, vMessage, vFlags) {
 	}
 }
 function handlevWSClose(voiceSession) {
+	//Emit the disconnect event first
+	voiceSession.emitter.emit("disconnect", voiceSession.channelID);
+	voiceSession.emitter = null
+	//Kill encoder and decoders
+	var audio = voiceSession.audio, members = voiceSession.members;
+	if (audio) {
+		if (audio._systemEncoder) audio._systemEncoder.kill();
+		if (audio._mixedDecoder) audio._mixedDecoder.destroy();
+	}
+
+	Object.keys(members).forEach(function(ID) {
+		var member = members[ID];
+		if (member.decoder) member.decoder.destroy();
+	});
+
+	//Clear intervals and remove listeners
 	clearInterval(voiceSession.wsKeepAlive);
 	clearInterval(voiceSession.udpKeepAlive);
-	voiceSession.emitter.emit('disconnect', voiceSession.channelID);
 	removeAllListeners(voiceSession.emitter);
 	removeAllListeners(voiceSession.udp.connection, 'message');
 	removeAllListeners(voiceSession.ws.connection, 'message');
-	return void(voiceSession.emitter = null);
+
+	return delete(this._vChannels[voiceSession.channelID]);
 }
 
 function handleUDPMessage(voiceSession, msg, rinfo) {
@@ -1911,50 +2190,16 @@ function handleUDPMessage(voiceSession, msg, rinfo) {
 		vDiscIP += String.fromCharCode(buffArr[i]);
 	}
 	vDiscPort = msg.readUIntLE(msg.length - 2, 2).toString(10);
-
-	var wsDiscPayload = {
-		"op":1,
-		"d":{
-			"protocol":"udp",
-			"data":{
-				"address": vDiscIP,
-				"port": Number(vDiscPort),
-				"mode": voiceSession.ws.modes[1] //'xsalsa20_poly1305'
-			}
-		}
-	};
-	send(voiceSession.ws.connection, wsDiscPayload);
-}
-
-function handleVoiceChannelChange(client, voiceSession) {
-	/*Listen for any websocket events that say that this audio client
-	changed voice channels. The session token will differentiate our
-	session from any other audio sessions using the same account*/
-	client._ws.once('message', function(m, f) {
-		m = decompressWSMessage(m, f);
-		if (
-			(m.t !== 'VOICE_STATE_UPDATE')				||
-			(m.d.session_id !== voiceSession.session) 	||
-			(m.d.guild_id !== voiceSession.serverID)
-		) return handleVoiceChannelChange(client, voiceSession);
-		if (m.d.channel_id === null) return leaveVoiceChannel(client, voiceSession.channelID);
-		if (m.d.channel_id != voiceSession.channelID) {
-			client._vChannels[m.d.channel_id] = voiceSession;
-			delete(client._vChannels[voiceSession.channelID]);
-			voiceSession.channelID = m.d.channel_id;
-			handleVoiceChannelChange(client, voiceSession);
-		}
-	});
+	return send(voiceSession.ws.connection, Payloads.VOICE_DISCOVERY(vDiscIP, vDiscPort, 'xsalsa20_poly1305'));
 }
 
 /* - Functions - Voice - AudioCallback - */
 function AudioCB(voiceSession, audioChannels, encoder, maxStreamSize) {
-	//With the addition of the new Stream API, `playAudioFile` and `send`
-	//will be removed. However they're deprecated for now, hence the code
-	//repetition.
+	//With the addition of the new Stream API, `playAudioFile`, `stopAudioFile` and `send`
+	//will be removed. However they're deprecated for now, hence the code repetition.
+	if (maxStreamSize && !Opus) Opus = require('cjopus');
 	Stream.Duplex.call(this);
-	var ACBI = this, 
-	bHandleIncomingAudio = handleIncomingAudio.bind(this), enc;
+	var ACBI = this;
 
 	this.audioChannels = audioChannels;
 	this.members = voiceSession.members;
@@ -1962,10 +2207,10 @@ function AudioCB(voiceSession, audioChannels, encoder, maxStreamSize) {
 	applyProperties(this, [
 		["_sequence", 0],
 		["_timestamp", 0],
-		["_exited", false],
 		["_readable", false],
 		["_streamRef", null],
 		["_startTime", null],
+		["_systemEncoder", null],
 		["_playingAudioFile", false],
 		["_voiceSession", voiceSession],
 		["_port", voiceSession.ws.port],
@@ -1973,41 +2218,19 @@ function AudioCB(voiceSession, audioChannels, encoder, maxStreamSize) {
 		["_decodeNonce", new Uint8Array(24)],
 		["_vUDP", voiceSession.udp.connection],
 		["_secretKey", new Uint8Array(voiceSession.secretKey)],
-		["_mixedDecoder", new Opus.OpusEncoder( 48000, audioChannels )],
+		["_mixedDecoder", Opus && new Opus.OpusEncoder( 48000, audioChannels ) || null]
 	]);
 
-	//Fix this voiceSession.callback stuff
+	createAudioEncoder(this, encoder);
 
-	enc = ChildProc.spawn(encoder, [
-		'-i', 'pipe:0',
-		'-map', '0:a',
-		'-acodec', 'libopus',
-		'-f', 'data',
-		'-sample_fmt', 's16',
-		'-vbr', 'off',
-		'-compression_level', '10',
-		'-ar', '48000',
-		'-ac', ACBI.audioChannels,
-		'-b:a', '128000',
-		'pipe:1'
-	], {stdio: ['pipe', 'pipe', 'ignore']});
-
-	enc.stdout.once('error', function(e) {
-		enc.stdout.emit('end');
-		enc.kill();
-		ACBI._exited = true;
-	});
-	enc.stdout.on('readable', function() {
-		if (ACBI._readable) return;
-
-		ACBI._readable = true;
-		send(ACBI._voiceSession.ws.connection, ACBP._speakingStart);
-		ACBI._startTime = new Date().getTime();
-		prepareAudio(ACBI, enc.stdout, 1);
-	});
-
-	this._write = enc.stdin.write.bind(enc.stdin);
-	this._read = function() {};
+	this._write = function _write(chunk, encoding, callback) {
+		ACBI._systemEncoder.stdin.write(chunk);
+		return callback();
+	};
+	this._read = function _read() {};
+	this.stop = function stop() {
+		return this._systemEncoder.stdout.read = function() { return null };
+	};
 
 	if (maxStreamSize) {
 		voiceSession.ws.connection.on('message', function(data, flags) {
@@ -2019,13 +2242,14 @@ function AudioCB(voiceSession, audioChannels, encoder, maxStreamSize) {
 					highWaterMark: maxStreamSize,
 					read: function(s) {}
 				});
-				voiceSession.members[data.d.user_id].decoder = new Opus.OpusEncoder( 48000, 2 );
+				voiceSession.members[data.d.user_id].decoder = new Opus.OpusEncoder( 48000, ACBI.audioChannels );
+				ACBI.emit('newMemberStream', data.d.user_id, voiceSession.members[data.d.user_id]);
 			}
 
 			voiceSession.members[data.d.user_id].ssrc = data.d.ssrc;
 			voiceSession.translator[data.d.ssrc] = voiceSession.members[data.d.user_id];
 		});
-		this._vUDP.on('message', bHandleIncomingAudio);
+		this._vUDP.on('message', handleIncomingAudio.bind(this));
 	}
 }
 if (isNode) Util.inherits(AudioCB, Stream.Duplex);
@@ -2059,11 +2283,13 @@ AudioCB.VoicePacket = (function() {
 	};
 })();
 var ACBP = AudioCB.prototype;
-ACBP._speakingStart = { "op":5, "d":{ "speaking": true, "delay": 0 } };
-ACBP._speakingEnd = { "op":5, "d":{ "speaking": false, "delay":0 } };
-
-//To Be Removed
+//TODO: Remove in v3
 ACBP.playAudioFile = function(location, callback) {
+	if (!this._mixedDecoder) {
+		if (!Opus) Opus = require('cjopus');
+		this._mixedDecoder = new Opus.OpusEncoder( 48000, this.audioChannels );
+	}
+
 	if (this._playingAudioFile) return handleErrCB("There is already a file being played.", callback);
 	var encs = ['ffmpeg', 'avconv'], selection, enc, ACBI = this;
 
@@ -2071,7 +2297,7 @@ ACBP.playAudioFile = function(location, callback) {
 	selection = chooseAudioEncoder(encs);
 
 	if (!selection) return console.log("You need either 'ffmpeg' or 'avconv' and they need to be added to PATH");
-	
+
 	enc = ChildProc.spawn(selection , [
 		'-i', location,
 		'-f', 's16le',
@@ -2081,7 +2307,7 @@ ACBP.playAudioFile = function(location, callback) {
 	], {stdio: ['pipe', 'pipe', 'ignore']});
 	enc.stdout.once('end', function() {
 		enc.kill();
-		send(ACBI._voiceSession.ws.connection, ACBP._speakingEnd);
+		send(ACBI._voiceSession.ws.connection, Payloads.VOICE_SPEAK(0));
 		ACBI._playingAudioFile = false;
 		ACBI.emit('fileEnd');
 	});
@@ -2089,13 +2315,13 @@ ACBP.playAudioFile = function(location, callback) {
 		enc.stdout.emit('end');
 	});
 	enc.stdout.once('readable', function() {
-		send(ACBI._voiceSession.ws.connection, ACBP._speakingStart);
+		send(ACBI._voiceSession.ws.connection, Payloads.VOICE_SPEAK(1));
 		ACBI._startTime = new Date().getTime();
 		prepareAudioOld(ACBI, enc.stdout, 1);
 	});
 	this._streamRef = enc;
 };
-//To Be Removed
+//TODO: Remove in v3
 ACBP.stopAudioFile = function(callback) {
 	if (!this._playingAudioFile) return handleErrCB("There is no file being played", callback);
 
@@ -2105,9 +2331,13 @@ ACBP.stopAudioFile = function(callback) {
 
 	call(callback);
 };
-//To Be Removed
+//TODO: Remove in v3
 ACBP.send = function(stream) {
-	send(this._voiceSession.ws.connection, this._speakingStart);
+	if (!this._mixedDecoder) {
+		if (!Opus) Opus = require('cjopus');
+		this._mixedDecoder = new Opus.OpusEncoder( 48000, this.audioChannels );
+	}
+	send(this._voiceSession.ws.connection, Payloads.VOICE_SPEAK(1));
 	this._startTime = new Date().getTime();
 	prepareAudioOld(this, stream, 1);
 };
@@ -2116,25 +2346,24 @@ function prepareAudio(ACBI, readableStream, cnt) {
 	var data = readableStream.read( 320 ) || readableStream.read(); //(128 [kb] * 20 [frame_size]) / 8 == 320
 
 	if (!data) {
-		send(ACBI._voiceSession.ws.connection, ACBP._speakingEnd);
+		send(ACBI._voiceSession.ws.connection, Payloads.VOICE_SPEAK(0));
 		ACBI._readable = false;
-		return ACBI.emit('done');
+		return readableStream.emit('end');
 	}
 
 	return setTimeout(function() {
-		sendAudio(ACBI, data || [0xF8, 0xFF, 0xFE] ); 
-		//The Array will never be reached, but right now I'm so confused with these damn streams.
+		sendAudio(ACBI, data);
 		prepareAudio(ACBI, readableStream, cnt + 1);
 	}, 20 + ( (ACBI._startTime + cnt * 20) - Date.now() ));
 }
 
-//To Be Removed
+//TODO: Remove in v3
 function prepareAudioOld(ACBI, readableStream) {
 	var done = false;
 
 	readableStream.on('end', function() {
 		done = true;
-		send(ACBI._voiceSession.ws.connection, ACBP._speakingEnd);
+		send(ACBI._voiceSession.ws.connection, Payloads.VOICE_SPEAK(0));
 	});
 
 	_prepareAudio(ACBI, readableStream, 1);
@@ -2146,7 +2375,9 @@ function prepareAudioOld(ACBI, readableStream) {
 		buffer = readableStream.read( 1920 * ACBI.audioChannels );
 		encoded = [0xF8, 0xFF, 0xFE];
 
-		if (buffer && buffer.length === 1920 * ACBI.audioChannels) encoded = ACBI._mixedDecoder.encode(buffer);
+		if ((buffer && buffer.length === 1920 * ACBI.audioChannels) && !ACBI._mixedDecoder.destroyed) {
+			encoded = ACBI._mixedDecoder.encode(buffer);
+		}
 
 		return setTimeout(function() {
 			sendAudio(ACBI, encoded);
@@ -2156,11 +2387,11 @@ function prepareAudioOld(ACBI, readableStream) {
 }
 
 function sendAudio(ACBI, buffer) {
-	ACBI._sequence = ACBI._sequence < 0xFFFF ? ACBI._sequence + 1 : 0;
-	ACBI._timestamp = ACBI._timestamp < 0xFFFFFFFF ? ACBI._timestamp + 960 : 0;
-
+	ACBI._sequence  = (ACBI._sequence  + 1  ) < 0xFFFF     ? ACBI._sequence  + 1   : 0;
+	ACBI._timestamp = (ACBI._timestamp + 960) < 0xFFFFFFFF ? ACBI._timestamp + 960 : 0;
+	if (ACBI._voiceSession.self_mute) return;
 	var audioPacket = AudioCB.VoicePacket(buffer, ACBI._voiceSession.ws.ssrc, ACBI._sequence, ACBI._timestamp, ACBI._secretKey);
-	
+
 	try {
 		//It throws a synchronous error if it fails (someone leaves the audio channel while playing audio)
 		ACBI._vUDP.send(audioPacket, 0, audioPacket.length, ACBI._port, ACBI._address);
@@ -2169,7 +2400,7 @@ function sendAudio(ACBI, buffer) {
 
 function handleIncomingAudio(msg) {
 	//The response from the UDP keep alive ping
-	if (msg.length === 8) return;
+	if (msg.length === 8 || this._voiceSession.self_deaf) return;
 
 	var header = msg.slice(0, 12),
 		audio = msg.slice(12),
@@ -2205,15 +2436,66 @@ function addToStreamBuffer(RStream, data) {
 
 function chooseAudioEncoder(players) {
 	if (!players[0]) return null;
-	var s = ChildProc.spawnSync(players.shift());
-	return s.error ? chooseAudioEncoder(players) : s.file;
+	var file = players.shift();
+	var s = ChildProc.spawnSync(file);
+	return s.error ? chooseAudioEncoder(players) : file;
+}
+function createAudioEncoder(ACBI, encoder) {
+	var enc = ACBI._systemEncoder;
+	if (enc) {
+		enc.stdout.emit('end');
+		enc.kill();
+		ACBI._systemEncoder = null;
+	}
+
+	enc = ACBI._systemEncoder = ChildProc.spawn(encoder, [
+		'-hide_banner',
+		'-loglevel', 'error',
+		'-i', 'pipe:0',
+		'-map', '0:a',
+		'-acodec', 'libopus',
+		'-f', 'data',
+		'-sample_fmt', 's16',
+		'-vbr', 'off',
+		'-compression_level', '10',
+		'-ar', '48000',
+		'-ac', ACBI.audioChannels,
+		'-b:a', '128000',
+		'pipe:1'
+	], {stdio: ['pipe', 'pipe', 'pipe']});
+
+	enc.stderr.once('data', function(d) {
+		if (ACBI.listeners('error').length > 0) ACBI.emit('error', d.toString());
+	});
+
+	enc.stdin.once('error', function(e) {
+		enc.stdout.emit('end');
+		enc.kill();
+	});
+
+	enc.stdout.once('error', function(e) {
+		enc.stdout.emit('end');
+		enc.kill();
+	});
+	enc.stdout.once('end', function() {
+		createAudioEncoder(ACBI, encoder);
+		ACBI.emit('done');
+	});
+	enc.stdout.on('readable', function() {
+		if (ACBI._readable) return;
+
+		ACBI._readable = true;
+		send(ACBI._voiceSession.ws.connection, Payloads.VOICE_SPEAK(1));
+		ACBI._startTime = new Date().getTime();
+		prepareAudio(ACBI, enc.stdout, 1);
+	});
 }
 
 /* - DiscordClient - Classes - */
 function Resource() {}
 Object.defineProperty(Resource.prototype, "creationTime", {
 	get: function() { return (+this.id / 4194304) + 1420070400000; },
-	set: function(v) { return; }
+	set: function() {}
 });
 [Server, Channel, DMChannel, User, Member, Role].forEach(function(p) {
 	p.prototype = Object.create(Resource.prototype);
@@ -2225,6 +2507,9 @@ function Server(client, data) {
 	//Accept everything now and trim what we don't need, manually. Any data left in is fine, any data left out could lead to a broken lib.
 	copyKeys(data, this);
 	this.large = this.large || this.member_count > LARGE_THRESHOLD;
+	this.voiceSession = null;
+	this.self_mute = !!this.self_mute;
+	this.self_deaf = !!this.self_deaf;
 	if (data.unavailable) return;
 
 	//Objects so we can use direct property accessing without for loops
@@ -2237,9 +2522,12 @@ function Server(client, data) {
 	data.channels.forEach(function(channel) {
 		client.channels[channel.id] = new Channel(client, server, channel);
 	});
+	data.roles.forEach(function(role) {
+		server.roles[role.id] = new Role(role);
+	});
 	data.members.forEach(function(member) {
 		client.users[member.user.id] = new User(member.user);
-		server.members[member.user.id] = new Member(client, member);
+		server.members[member.user.id] = new Member(client, server, member);
 	});
 	data.presences.forEach(function(presence) {
 		var id = presence.user.id;
@@ -2248,9 +2536,6 @@ function Server(client, data) {
 
 		client.users[id].game = presence.game;
 		server.members[id].status = presence.status;
-	});
-	data.roles.forEach(function(role) {
-		server.roles[role.id] = new Role(role);
 	});
 	data.emojis.forEach(function(emoji) {
 		server.emojis[emoji.id] = new Emoji(emoji);
@@ -2283,23 +2568,23 @@ function Channel(client, server, data) {
 		var type = (p.type === 'member' ? 'user' : 'role');
 		this.permissions[type][p.id] = {allow: p.allow, deny: p.deny};
 	}, this);
-	
-
-	delete(this.is_private);
 }
 function DMChannel(translator, data) {
 	copyKeys(data, this);
-	translator[data.recipient.id] = data.id;
-	delete(this.is_private);
+	this.recipient = data.recipients[0];
+	data.recipients.forEach(function(recipient) {
+		translator[recipient.id] = data.id;
+	});
 }
 function User(data) {
 	copyKeys(data, this);
 	this.bot = this.bot || false;
 }
-function Member(client, data) {
+function Member(client, server, data) {
+	copyKeys(data, this, ['user', 'joined_at',]);
 	this.id = data.user.id;
 	this.joined_at = Date.parse(data.joined_at);
-	copyKeys(data, this, ['user', 'joined_at',]);
+	this.color = colorFromRole(server, this);
 	['username', 'discriminator', 'bot', 'avatar', 'game'].forEach(function(k) {
 		if (k in Member.prototype) return;
 
@@ -2320,7 +2605,7 @@ function Emoji(data) {
 }
 
 function Multipart() {
-	this.boundary = 
+	this.boundary =
 		"NodeDiscordIO" + "-" + CURRENT_VERSION;
 	this.result = "";
 }
@@ -2331,13 +2616,10 @@ Multipart.prototype.append = function(data) {
 	str += 'Content-Disposition: form-data; name="' + data[0] + '"';
 	if (data[2]) {
 		str += '; filename="' + data[2] + '"\r\n';
-		str += 'Content-Type: application/octet-stream\r\n';
-	} else {
-		str += "\r\n";
+		str += 'Content-Type: application/octet-stream';
 	}
-
 	/* Body */
-	str += "\r\n" + ( data[1] instanceof Buffer ? data[1] : Buffer(String(data[1]), 'utf-8') ).toString('binary');
+	str += "\r\n\r\n" + ( data[1] instanceof Buffer ? data[1] : new Buffer(String(data[1]), 'utf-8') ).toString('binary');
 	this.result += str;
 };
 Multipart.prototype.finalize = function() {
@@ -2372,15 +2654,16 @@ Channel.update = function(client, data) {
 		}
 		client.channels[data.id][key] = data[key];
 	}
-	delete(client.channels[data.id].is_private);
 };
-Member.update = function(server, data) {
-	if (!server.members[data.user.id]) server.members[data.user.id] = {}; // new Member(data)?
-	copyKeys(data, server.members[data.user.id], ['user']);
+Member.update = function(client, server, data) {
+	if (!server.members[data.user.id]) return server.members[data.user.id] = new Member(client, server, data);
+	var member = server.members[data.user.id];
+	copyKeys(data, member, ['user']);
+	member.color = colorFromRole(server, member);
 };
 Role.update = function(server, data) {
 	if (!server.roles[data.role.id]) server.roles[data.role.id] = {}; // new Role(data)?
-	this._permissions = data.permissions;
+	server.roles[data.role.id]._permissions = data.role.permissions;
 	copyKeys(data.role, server.roles[data.role.id], ['permissions']);
 };
 Emoji.update = function(server, data) {
@@ -2392,8 +2675,16 @@ Emoji.update = function(server, data) {
 
 Object.defineProperty(Role.prototype, "permission_values", {
 	get: function() { return this; },
-	set: function(v) {},
+	set: function() {},
 	enumerable: true
+});
+Object.defineProperty(User.prototype, 'avatarURL', {
+	get: function() {
+		if (!this.avatar) return null;
+		var animated = this.avatar.indexOf("a_") > -1;
+		return Discord.Endpoints.CDN + "/avatars/" + this.id + "/" + this.avatar + (animated ? ".gif" : ".webp");
+	},
+	set: function() {}
 });
 
 //Discord.OAuth;
@@ -2412,7 +2703,9 @@ Discord.Codes.WebSocket = {
 	"4007": "Invalid Sequence Number",
 	"4008": "Rate Limited",
 	"4009": "Session Timeout",
-	"4010": "Invalid Shard"
+	"4010": "Invalid Shard",
+	"4011": "Sharding Required",
+	"4012": "Invalid Gateway Version"
 };
 Discord.Colors = {
 	DEFAULT: 0,
@@ -2444,12 +2737,14 @@ Discord.Permissions = {
 	GENERAL_ADMINISTRATOR: 3,
 	GENERAL_MANAGE_CHANNELS: 4,
 	GENERAL_MANAGE_GUILD: 5,
+	GENERAL_AUDIT_LOG: 7,
 	GENERAL_MANAGE_ROLES: 28,
 	GENERAL_MANAGE_NICKNAMES: 27,
 	GENERAL_CHANGE_NICKNAME: 26,
 	GENERAL_MANAGE_WEBHOOKS: 29,
 	GENERAL_MANAGE_EMOJIS: 30,
 
+	TEXT_ADD_REACTIONS: 6,
 	TEXT_READ_MESSAGES: 10,
 	TEXT_SEND_MESSAGES: 11,
 	TEXT_SEND_TTS_MESSAGE: 12,
@@ -2466,6 +2761,12 @@ Discord.Permissions = {
 	VOICE_DEAFEN_MEMBERS: 23,
 	VOICE_MOVE_MEMBERS: 24,
 	VOICE_USE_VAD: 25,
+};
+Discord.LogLevels = {
+	Verbose: 0,
+	Info: 1,
+	Warn: 2,
+	Error: 3
 };
 
 Object.keys(Discord.Permissions).forEach(function(pn) {
@@ -2509,7 +2810,7 @@ function Emitter() {
 		emt._evts[eName].push(eOnce);
 
 		return this.addEventListener(eName, eOnce);
-		
+
 		function eOnce(e) {
 			eFunc.apply(null, resolveEvent(e));
 			return emt.removeListener(eName, eOnce);
@@ -2533,17 +2834,19 @@ function Websocket(url, opts) {
 /* Endpoints */
 (function () {
 	var API = "https://discordapp.com/api";
+	var CDN = "http://cdn.discordapp.com";
 	var ME  = API + "/users/@me";
 	Endpoints = Discord.Endpoints = {
 		API: 		API,
+		CDN: 		CDN,
 
 		ME:			ME,
-		NOTE:      function(userID) {
+		NOTE:		function(userID) {
 			return  ME + "/notes/" + userID;
 		},
-		LOGIN:      API + "/auth/login",
+		LOGIN:		API + "/auth/login",
 		OAUTH:		API + "/oauth2/applications/@me",
-		GATEWAY:    API + "/gateway",
+		GATEWAY:	API + "/gateway",
 		SETTINGS: 	ME + "/settings",
 
 		SERVERS: function(serverID) {
@@ -2553,7 +2856,7 @@ function Websocket(url, opts) {
 			return  this.ME + "/guilds" + (serverID ? "/" + serverID : ""); //Method to list personal servers?
 		},
 		SERVER_EMOJIS: function(serverID, emojiID) {
-			return this.SERVERS(serverID) + "/emojis" + (emojiID ? "/" + emojiID : "");
+			return  this.SERVERS(serverID) + "/emojis" + (emojiID ? "/" + emojiID : "");
 		},
 
 		CHANNEL: function(channelID) {
@@ -2562,6 +2865,9 @@ function Websocket(url, opts) {
 
 		MEMBERS: function(serverID, userID) {
 			return  this.SERVERS(serverID) + "/members" + (userID ? "/" + userID : "");
+		},
+		MEMBER_ROLES: function(serverID, userID, roleID) {
+			return	this.MEMBERS(serverID, userID) + "/roles" + (roleID ? "/" + roleID : "");
 		},
 
 		USER: function(userID) {
@@ -2583,12 +2889,30 @@ function Websocket(url, opts) {
 			return  this.CHANNEL(channelID) + "/pins" + (messageID ? "/" + messageID : "");
 		},
 
+		MESSAGE_REACTIONS: function(channelID, messageID, reaction) {
+			return  this.MESSAGES(channelID, messageID) + "/reactions" + ( reaction ? ("/" + reaction) : "" );
+		},
+		USER_REACTIONS: function(channelID, messageID, reaction, userID) {
+		  	return  this.MESSAGE_REACTIONS(channelID, messageID, reaction) + '/' + ( (!userID || userID === this.id) ? '@me' : userID );
+		},
+
 		INVITES: function(inviteCode) {
 			return  API + "/invite/" + inviteCode;
 		},
 
+		SERVER_WEBHOOKS: function(serverID) {
+			return  this.SERVERS(serverID) + "/webhooks";
+		},
+		CHANNEL_WEBHOOKS: function(channelID) {
+			return  this.CHANNEL(channelID) +"/webhooks";
+		},
+
+		WEBHOOKS: function(webhookID) {
+			return  API + "/webhooks/" + webhookID;
+		},
+
 		BULK_DELETE: function(channelID) {
-			return  this.CHANNEL(channelID) + "/messages/bulk_delete";
+			return  this.CHANNEL(channelID) + "/messages/bulk-delete";
 		},
 
 		TYPING: function(channelID) {
@@ -2596,6 +2920,111 @@ function Websocket(url, opts) {
 		}
 
 	};
+})();
+
+/* Payloads */
+(function() {
+	Payloads = {
+		IDENTIFY: function(client) {
+			return {
+				op: 2,
+				d: {
+					token: client.internals.token,
+					compress: isNode && !!Zlib.inflateSync,
+					large_threshold: LARGE_THRESHOLD,
+					presence: client.presence,
+					properties: {
+						$os: isNode ? require('os').platform() : navigator.platform,
+						$browser:"discord.io",
+						$device:"discord.io",
+						$referrer:"",
+						$referring_domain:""
+					}
+				}
+			};
+		},
+		RESUME: function(client) {
+			return {
+				op: 6,
+				d: {
+					token: client.internals.token,
+					session_id: client.internals.sessionID,
+					seq: client.internals.sequence
+				}
+			};
+		},
+		HEARTBEAT: function(client) {
+			return {op: 1, d: client.internals.sequence};
+		},
+		ALL_USERS: function(client) {
+			return {op: 12, d: Object.keys(client.servers)};
+		},
+		STATUS: function(input) {
+			return {
+				op: 3,
+				d: {
+					status: type(input.since) === 'number' ? 'idle' : input.status !== undefined ? input.status : null,
+					afk: !!input.afk,
+					since: type(input.since) === 'number' || input.status === 'idle' ? Date.now() : null,
+					game: type(input.game) === 'object' ?
+						{
+							name: input.game.name ? String(input.game.name) : null,
+							type: input.game.type ? Number(input.game.type) : 0,
+							url: input.game.url ? String(input.game.url) : null
+						} :
+						null
+				}
+			};
+		},
+		UPDATE_VOICE: function(serverID, channelID, self_mute, self_deaf) {
+			return {
+				op: 4,
+				d: {
+					guild_id: serverID,
+					channel_id: channelID,
+					self_mute: self_mute,
+					self_deaf: self_deaf
+				}
+			};
+		},
+		OFFLINE_USERS: function(array) {
+			return {
+				op: 8,
+				d: {
+					guild_id: array.splice(0, 50),
+					query: "",
+					limit: 0
+				}
+			};
+		},
+		VOICE_SPEAK: function(v) {
+			return {op:5, d:{ speaking: !!v, delay: 0 }};
+		},
+		VOICE_IDENTIFY: function(clientID, voiceSession) {
+			return {
+				op: 0,
+				d: {
+					server_id: voiceSession.serverID,
+					user_id: clientID,
+					session_id: voiceSession.session,
+					token: voiceSession.token
+				}
+			};
+		},
+		VOICE_DISCOVERY: function(ip, port, mode) {
+			return {
+				op:1,
+				d:{
+					protocol:"udp",
+					data:{
+						address: ip,
+						port: Number(port),
+						mode: mode
+					}
+				}
+			};
+		}
+	}
 })();
 
 })(typeof exports === 'undefined'? this.Discord = {} : exports);

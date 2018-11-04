@@ -1,6 +1,7 @@
 function setUserGameInfoFromPageThingFunction() {
 	
 	var x = document.getElementById("frm1");
+	var playType = document.querySelector('input[name="playType"]:checked').value;
 	var tokenFromPage = x.elements[0].value;
 	var gameFromPage = x.elements[1].value;
 	addText("Attempting to log in to discord with given token...");
@@ -12,10 +13,11 @@ function setUserGameInfoFromPageThingFunction() {
 		idle_since: null,
 		game: {
 			name: gameFromPage,
-			type: 0,
+			type: Number(playType),
 			url: null
 		}
 	};
+
 	client.on("ready", function(event) {
 		addText("Connected!");
 		addText("Logged in as: ");
@@ -27,7 +29,7 @@ function setUserGameInfoFromPageThingFunction() {
 	});
 	
 	client.on("disconnect", function() {
-		addtext("Client disconnected. Did you enter a correct token?");
+		addText("Client disconnected. Did you enter a correct token?");
 	});
 }
 function addText(add) {
