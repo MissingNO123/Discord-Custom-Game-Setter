@@ -3,6 +3,16 @@
 				background-color: #7289da;
 			}
 			
+			a {
+				color: black;
+				text-decoration:none;
+			}
+			
+			.blackText {
+				color:black; 
+				display:contents;
+			}
+			
 			#content {
 				padding-top: 20px;
 				margin-left: 20%;
@@ -15,6 +25,11 @@
 			#divvy {
 				text-align: left;	
 			}
+			
+			#divvy a {
+				color:white;
+			}
+			
 			img.mid {
 				vertical-align: middle;
 				width: 300px;
@@ -51,7 +66,7 @@
 				box-shadow: 0 0px 0px 0 rgba(0,0,0,0);
 			}
 			
-			input[type=text] {
+			input[type=text], input[type=password] {
 				color: white;
 				width:100%;
 				font-family: Whitney,'Helvetica Neue',Helvetica,Arial,'Lucida Grande',sans-serif;

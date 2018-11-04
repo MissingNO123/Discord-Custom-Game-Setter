@@ -54,7 +54,7 @@
 			</form> 
 			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
 			<button onclick="dispMsg()">How do I get my token?</button><br>
-			<span style="color:#FF5555">WARNING! Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account by using this tool, 
+			<span style="color:#FF5555">Tokens should be handled with care (treat them as if they were your password!), as they grant access to your user account. I am not responsible for any damage caused to you or your account from the use or misuse of this tool, 
 				use it at your own risk.</span>
 				<br> If nothing happens when you hit submit, you may have entered an invalid token. <br />
 				(Everything involving your token is handled securely, but if you have any concerns about how I'm handling your them you can check out the source code <a href="https://github.com/MissingNO123/Discord-Custom-Game-Setter">here</a>.)
@@ -69,12 +69,13 @@
 			<div id="msgBox">
 				<span id="xbutton"><a href="#" onclick="closeMsg()">&#215;</a></span> <br />
 				<span id="title">To get your token:</span> <br />
-				Open Discord in your web browser, click on the address bar and clear it, then type <br />
-				<a style="color:black; display:inline;">javascript:alert(localStorage.token)</a>
-				A message will pop up with your token in quotation marks. <br />
+				Open Discord in your web browser, then open developer tools with <span class="blackText">F12</span>.<sr />
+				Navigate to the <span class="blackText">"Application"</span> or <span class="blackText">"Storage"</span> tab, then click <span class="blackText">"Local Storage"</span><sr />
+				and then <span class="blackText">discordapp.com</span>, <sr />then find where it says <span class="blackText">"token"</span> in the first column.<br />
 				It will look something like this: <br />
-				"MTc1DeF2GHIjKLm3NOP4QRS5.Tuv6WX.y7Z_ABcDE7-fgHij8K8LMNopQrs" <br />
-				Copy it and paste it here without the quotation marks.
+				<span class="blackText">"MTc1DeF2GHIjKLm3NOP4QRS5.Tuv6WX.y7Z_ABcDE7-fgHij8K8LMNopQrs"</span><br />
+				Copy it and paste it here without the quotation marks.<br />
+				<span style="color:red;">Please make sure not to paste it or share it anywhere else.</span>
 			</div>
 		</div>
 	<script src="main.js" "type=text/JavaScript"></script>
