@@ -21,7 +21,7 @@
 		
         <title>Discord Custom Game Setter</title>
         <script src="discordio.js"></script> <!-- The discord.io client file -->
-	<script type="text/JavaScript">
+	<script type="text/JavaScript"> 
 		//from https://msdn.microsoft.com/en-us/library/ms537509(v=vs.85).aspx
 		function getInternetExplorerVersion() {
 		// Returns the version of Internet Explorer or a -1
@@ -59,12 +59,13 @@
 			<br />Custom Game Setter
 			</div>
 			<form id="frm1">
-				<input name="token" id="token" size="90" placeholder="Input Your Token Here" type="text"><br>
+				<input name="token" id="token" size="90" placeholder="Input Your Token Here" type="password"><br>
 				<input name="game" id="game" size="90" placeholder="Name of the Game You Want Others to See" type="text"><br>
 				<div class="rBtn">
-					<input type="radio" name="playType" value="0" checked> Playing
-					<input type="radio" name="playType" value="3"> Watching
-					<input type="radio" name="playType" value="2"> Listening to
+					<input type="radio" name="playType" value="0" checked>Playing
+					<input type="radio" name="playType" value="3">Watching
+					<input type="radio" name="playType" value="2">Listening to
+					<input type="checkbox" id="rememberMe" name="rememberMe">Remember Token
 				</div>
 			</form> 
 			<button onclick="setUserGameInfoFromPageThingFunction()">Submit</button>
@@ -76,7 +77,7 @@
 				<br> <br>	 
 			
 			<div id="divvy" style="background-color:#222222;padding:12px;" onclick="showLog()"> <a id="clicktoshow">Click to show Log</a><br />
-				<span id="alltext" style="font-family:Monaco,monospace;color:#FEFEFE;display:none;"><br /><b>Log</b><br><br></span>
+				<span id="alltext"><br /><b>Log</b><br><br></span>
 			</div> 
 			
 			
@@ -93,6 +94,11 @@
 				<span style="color:red;">Please make sure not to paste it or share it anywhere else.</span>
 			</div>
 		</div>
+	<script> //set remembered token 
+		var lsToken = localStorage.getItem("token"); 
+		if (lsToken) document.getElementById("frm1").elements[0].value = lsToken;
+		if (localStorage.getItem("box") == "1") document.getElementById("rememberMe").checked = true;
+	</script>
 	<script src="main.js" "type=text/JavaScript"></script>
 	</body>
 </html>

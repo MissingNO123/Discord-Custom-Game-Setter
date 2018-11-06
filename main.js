@@ -1,9 +1,10 @@
 function setUserGameInfoFromPageThingFunction() {
-	
 	var x = document.getElementById("frm1");
-	var playType = document.querySelector('input[name="playType"]:checked').value;
+	var playType = document.querySelector('input[name="playType"]:checked').value;	
 	var tokenFromPage = x.elements[0].value;
 	var gameFromPage = x.elements[1].value;
+	if(document.getElementById("rememberMe").checked == true) {localStorage.setItem("token", tokenFromPage); localStorage.setItem("box", "1")}
+	else {localStorage.setItem("token", ""); localStorage.setItem("box", "0")}
 	addText("Attempting to log in to discord with given token...");
 	var client = new Discord.Client({
 		token: tokenFromPage,
@@ -24,12 +25,12 @@ function setUserGameInfoFromPageThingFunction() {
 		addText(client.username + " - (" + client.id + ")");
 		addText("Setting game name...");
 		client.setPresence(presence); addText("Game set to \"" + presence.game.name + "\"");
-		addText("All done! You can close the page now.<br />");
-		alert("All done! You can close the page now.");
+		addText("All done!<br />");
+		alert("All done!"); 
 	});
 	
 	client.on("disconnect", function() {
-		addText("Client disconnected. Did you enter a correct token?");
+		addText("Client disconnected.");
 	});
 }
 function addText(add) {
