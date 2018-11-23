@@ -1,10 +1,10 @@
 			body {
 				margin: 0;
-				background-color: #7289da;
+				background-color: #36393F;
 			}
 			
 			a {
-				color: black;
+				color: white;
 				text-decoration:none;
 			}
 			
@@ -24,7 +24,7 @@
 			
 			#alltext {
 				font-family:Monaco,monospace;
-				color:#FEFEFE;
+				color:#292B2F;
 				display:none; 
 			}
 			
@@ -56,7 +56,7 @@
 				background-color: white;
 				border: none;
 				border-radius:3px;
-				color: #7289da;
+				color: #36393F;
 				font-family: Whitney,'Helvetica Neue',Helvetica,Arial,'Lucida Grande',sans-serif;
 				padding: 16px 32px;
 				text-decoration: none;
@@ -82,7 +82,7 @@
 				padding: 0px 20px 5px 20px;
 				margin: 8px 0;
 				box-sizing: border-box;
-				background-color: #7289da;
+				background-color: #36393F;
 			}
 			
 			#fadeblack {
